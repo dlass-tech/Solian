@@ -180,7 +180,7 @@ class AccountConnectionNewSheet extends HookConsumerWidget {
               scopes: [AppleIDAuthorizationScopes.email],
               webAuthenticationOptions: WebAuthenticationOptions(
                 clientId: 'dev.solsynth.solarpass',
-                redirectUri: Uri.parse('https://solian.app/auth/callback'),
+                redirectUri: Uri.parse('https://dy.ci/auth/callback'),
               ),
             );
 
