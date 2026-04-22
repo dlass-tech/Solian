@@ -38,53 +38,49 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyCfgOdlcr7h8x8j0WKx_S2wXnGkOopq320',
-    appId: '1:961776991058:web:3a912c0eb14028e5f4188b',
-    messagingSenderId: '961776991058',
-    projectId: 'solian-0x001',
-    authDomain: 'solian-0x001.firebaseapp.com',
-    storageBucket: 'solian-0x001.firebasestorage.app',
-    measurementId: 'G-JD1YEG9D6F',
+    apiKey: 'AIzaSyDYyabjWPoDIWYgBLgFTnCcg1Fx1oqg-dA',
+    appId: '1:598989124218:web:f25c015aed59077fd3c1c3',
+    messagingSenderId: '598989124218',
+    projectId: 'dyci-f35aa',
+    authDomain: 'dyci-f35aa.firebaseapp.com',
+    storageBucket: 'dyci-f35aa.firebasestorage.app',
+    measurementId: 'G-Q9784XEBRX',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyDvFNudXYs29uDtcCv6pFR8h5tXBs90FYk',
-    appId: '1:961776991058:android:a8d3f7995b0b8e86f4188b',
-    messagingSenderId: '961776991058',
-    projectId: 'solian-0x001',
-    storageBucket: 'solian-0x001.firebasestorage.app',
+    apiKey: 'AIzaSyDHVfQGhklfXeN54-TkScQD7Dc0T_uvUEQ',
+    appId: '1:598989124218:android:845fe767f903ed71d3c1c3',
+    messagingSenderId: '598989124218',
+    projectId: 'dyci-f35aa',
+    storageBucket: 'dyci-f35aa.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyCzQIyiYKoYHTpGXhN-IjgMML8z797WVD8',
-    appId: '1:961776991058:ios:727229d368cc47e1f4188b',
-    messagingSenderId: '961776991058',
-    projectId: 'solian-0x001',
-    storageBucket: 'solian-0x001.firebasestorage.app',
-    androidClientId: '961776991058-r4iv9qoio57ul7utbfpgfrda2etvtch8.apps.googleusercontent.com',
-    iosClientId: '961776991058-stt7et4qvn3cpscl4r61gl1hnlatqkig.apps.googleusercontent.com',
+    apiKey: 'AIzaSyCs0xkIfhmiflSCx7640q2opOU7cHnbgMQ',
+    appId: '1:598989124218:ios:c47ce0f3eaacfcaad3c1c3',
+    messagingSenderId: '598989124218',
+    projectId: 'dyci-f35aa',
+    storageBucket: 'dyci-f35aa.firebasestorage.app',
     iosBundleId: 'dev.solsynth.solian',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'AIzaSyCzQIyiYKoYHTpGXhN-IjgMML8z797WVD8',
-    appId: '1:961776991058:ios:727229d368cc47e1f4188b',
-    messagingSenderId: '961776991058',
-    projectId: 'solian-0x001',
-    storageBucket: 'solian-0x001.firebasestorage.app',
-    androidClientId: '961776991058-r4iv9qoio57ul7utbfpgfrda2etvtch8.apps.googleusercontent.com',
-    iosClientId: '961776991058-stt7et4qvn3cpscl4r61gl1hnlatqkig.apps.googleusercontent.com',
+    apiKey: 'AIzaSyCs0xkIfhmiflSCx7640q2opOU7cHnbgMQ',
+    appId: '1:598989124218:ios:c47ce0f3eaacfcaad3c1c3',
+    messagingSenderId: '598989124218',
+    projectId: 'dyci-f35aa',
+    storageBucket: 'dyci-f35aa.firebasestorage.app',
     iosBundleId: 'dev.solsynth.solian',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'AIzaSyCfgOdlcr7h8x8j0WKx_S2wXnGkOopq320',
-    appId: '1:961776991058:web:3a912c0eb14028e5f4188b',
-    messagingSenderId: '961776991058',
-    projectId: 'solian-0x001',
-    authDomain: 'solian-0x001.firebaseapp.com',
-    storageBucket: 'solian-0x001.firebasestorage.app',
-    measurementId: 'G-JD1YEG9D6F',
+    apiKey: 'AIzaSyDYyabjWPoDIWYgBLgFTnCcg1Fx1oqg-dA',
+    appId: '1:598989124218:web:fa0ec3c3502b6145d3c1c3',
+    messagingSenderId: '598989124218',
+    projectId: 'dyci-f35aa',
+    authDomain: 'dyci-f35aa.firebaseapp.com',
+    storageBucket: 'dyci-f35aa.firebasestorage.app',
+    measurementId: 'G-367CY821CB',
   );
 
 }

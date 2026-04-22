@@ -6,18 +6,18 @@
 #define FullVersion AppVersion + "." + BuildNumber
 
 [Setup]
-AppName=Solian
+AppName=呆兮
 AppVersion={#AppVersion}
-AppPublisher=Solsynth
-AppPublisherURL=https://solsynth.dev
-AppSupportURL=https://kb.solsynth.dev/zh/solar-network
-AppUpdatesURL=https://github.com/Solsynth/Solian/releases
-AppCopyright=Copyright © 2025 Solsynth
+AppPublisher=zhaishis
+AppPublisherURL=https://zhaishis.com
+AppSupportURL=https://zhaishis.com
+AppUpdatesURL=https://github.com/dlass-tech/Solian/releases
+AppCopyright=Copyright © 2026 zhaishis
 VersionInfoVersion={#FullVersion}
-UninstallDisplayName=Solian
-UninstallDisplayIcon={app}\Solian.exe
+UninstallDisplayName=呆兮
+UninstallDisplayIcon={app}\dyci.exe
 
-DefaultDirName={commonpf}\Solian
+DefaultDirName={commonpf}\dyci
 UsePreviousAppDir=no
 
 OutputDir=.\Installer
@@ -36,17 +36,17 @@ PrivilegesRequired=admin
 Source: ".\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\Solian"; Filename: "{app}\Solian.exe";IconFilename: "{app}\Solian.exe"
+Name: "{group}\dyci"; Filename: "{app}\dyci.exe";IconFilename: "{app}\dyci.exe"
 Name: "{group}\{cm:UninstallProgram,Solian}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\Solian"; Filename: "{app}\Solian.exe"; Tasks: desktopicon
+Name: "{autodesktop}\dyci"; Filename: "{app}\dyci.exe"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Run]
-Filename: "{app}\Solian.exe"; Description: "Launch Solian"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\dyci.exe"; Description: "启动呆兮"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
-Type: filesandordirs; Name: "{userappdata}\dev.solsynth\Solian"
-Type: files; Name: "{group}\Solian.lnk" ;
-Type: files; Name: "{autodesktop}\Solian.lnk" ;
+Type: filesandordirs; Name: "{userappdata}\zhaishis\dyci"
+Type: files; Name: "{group}\呆兮.lnk" ;
+Type: files; Name: "{autodesktop}\呆兮.lnk" ;

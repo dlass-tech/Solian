@@ -249,8 +249,8 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
                             context,
                             icon: Symbols.email,
                             title: 'aboutScreenContactUsTitle'.tr(),
-                            subtitle: 'lily@solsynth.dev',
-                            onTap: () => _launchURL('mailto:lily@solsynth.dev'),
+                            subtitle: 'sn@dy.ci',
+                            onTap: () => _launchURL('mailto:sn@dy.ci'),
                           ),
                           _buildListTile(
                             context,

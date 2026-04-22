@@ -7,7 +7,7 @@ String? resolveLivestreamHlsUrl(SnLiveStream stream) {
   if (raw == null || raw.isEmpty) return null;
   if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
 
-  final base = Uri.parse("https://ls.solian.app"); // TODO Change this
+  final base = Uri.parse("https://ls.dy.ci"); // TODO Change this
   final normalizedPath = raw.startsWith('/') ? raw : '/$raw';
   return base
       .replace(path: normalizedPath, query: null, fragment: null)

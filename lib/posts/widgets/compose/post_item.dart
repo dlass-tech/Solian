@@ -110,7 +110,7 @@ class PostActionableItem extends HookConsumerWidget {
         case 'copyLink':
           return () {
             Clipboard.setData(
-              ClipboardData(text: 'https://solian.app/posts/${item.id}'),
+              ClipboardData(text: 'https://dy.ci/posts/${item.id}'),
             );
           };
         case 'reply':
@@ -220,7 +220,7 @@ class PostActionableItem extends HookConsumerWidget {
           return () {
             showShareSheetLink(
               context: context,
-              link: 'https://solian.app/posts/${item.id}',
+              link: 'https://dy.ci/posts/${item.id}',
               title: 'sharePost'.tr(),
               toSystem: true,
             );

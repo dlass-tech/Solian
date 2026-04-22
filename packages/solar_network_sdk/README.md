@@ -28,7 +28,7 @@ import 'package:solar_network_sdk/solar_network_sdk.dart';
 
 final tokenStorage = SharedPreferencesTokenStorage(key: 'solar_token');
 final sdk = SolarNetworkSDK.create(
-  serverUrl: 'https://api.solian.app',
+  serverUrl: 'https://api.dy.ci',
   tokenStorage: tokenStorage,
 );
 ```
