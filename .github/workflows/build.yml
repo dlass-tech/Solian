@@ -24,6 +24,7 @@ jobs:
         with:
           name: build-output-web
           path: build/web
+
   build-exe:
     runs-on: windows-latest
     steps:
@@ -39,13 +40,13 @@ jobs:
       - name: Extract Version
         id: extract_version
         run: |
-           $pubspec = Get-Content pubspec.yaml -Raw
-           if ($pubspec -match 'version:\s*(\d+\.\d+\.\d+)\+(\d+)') {
-             $appVersion = $matches[1]
-             $buildNumber = $matches[2]
-             Write-Host "app_version=$appVersion" >> $env:GITHUB_OUTPUT
-             Write-Host "build_number=$buildNumber" >> $env:GITHUB_OUTPUT
-           }
+          $pubspec = Get-Content pubspec.yaml -Raw
+          if ($pubspec -match 'version:\s*(\d+\.\d+\.\d+)\+(\d+)') {
+            $appVersion = $matches[1]
+            $buildNumber = $matches[2]
+            Write-Host "app_version=$appVersion" >> $env:GITHUB_OUTPUT
+            Write-Host "build_number=$buildNumber" >> $env:GITHUB_OUTPUT
+          }
       - name: Archive production artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -61,6 +62,7 @@ jobs:
         with:
           name: build-output-windows-installer
           path: Installer/windows-x86_64-setup.exe
+
   build-linux:
     runs-on: ubuntu-latest
     steps:
@@ -97,48 +99,8 @@ jobs:
           sudo chmod +x buildtools/appimagetool-x86_64.AppImage
           sudo chmod +x Solian.AppDir/AppRun
           ./buildtools/appimagetool-x86_64.AppImage Solian.AppDir
-      - name: Archive production artifacts
+      - name: Archive AppImage artifacts
         uses: actions/upload-artifact@v4
         with:
           name: build-output-linux-appimage
           path: "./*.AppImage*"
-  upload-to-s3:
-    needs: [build-exe, build-linux]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download Windows installer artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: build-output-windows-installer
-          path: ./artifacts/windows
-      - name: Download AppImage artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: build-output-linux-appimage
-          path: ./artifacts/linux
-      - name: Zip Windows installer
-        run: |
-          cd ./artifacts/windows
-          zip -r ../build-output-windows-installer.zip .
-      - name: Zip Linux AppImage
-        run: |
-          cd ./artifacts/linux
-          zip -r ../build-output-linux-appimage.zip .
-      - name: Upload Windows to R2
-        uses: ryand56/r2-upload-action@latest
-        with:
-          r2-account-id: ${{ secrets.R2_ACCOUNT_ID }}
-          r2-access-key-id: ${{ secrets.S3_ACCESS_KEY_ID }}
-          r2-secret-access-key: ${{ secrets.S3_SECRET_ACCESS_KEY }}
-          r2-bucket: ${{ secrets.S3_BUCKET_NAME }}
-          source-dir: ./artifacts/build-output-windows-installer.zip
-          destination-dir: solian
-      - name: Upload Linux to R2
-        uses: ryand56/r2-upload-action@latest
-        with:
-          r2-account-id: ${{ secrets.R2_ACCOUNT_ID }}
-          r2-access-key-id: ${{ secrets.S3_ACCESS_KEY_ID }}
-          r2-secret-access-key: ${{ secrets.S3_SECRET_ACCESS_KEY }}
-          r2-bucket: ${{ secrets.S3_BUCKET_NAME }}
-          source-dir: ./artifacts/build-output-linux-appimage.zip
-          destination-dir: solian
