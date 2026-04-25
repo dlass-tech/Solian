@@ -27,7 +27,7 @@ class AboutScreen extends ConsumerStatefulWidget {
 
 class _AboutScreenState extends ConsumerState<AboutScreen> {
   PackageInfo _packageInfo = PackageInfo(
-    appName: 'Solian',
+    appName: 'Dynamic',
     packageName: 'dev.solsynth.solian',
     version: '1.0.0',
     buildNumber: '1',
@@ -258,7 +258,7 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
                             title: 'aboutScreenLicenseTitle'.tr(),
                             subtitle: 'aboutScreenLicenseContent'.tr(),
                             onTap: () => _launchURL(
-                              'https://github.com/Solsynth/Solian/blob/v3/LICENSE.txt',
+                              'https://github.com/Solsynth/Dynamic/blob/v3/LICENSE.txt',
                             ),
                           ),
                           if (kIsWeb || !(Platform.isMacOS || Platform.isIOS))

@@ -102,7 +102,7 @@ final userAgentProvider = FutureProvider<String>((ref) async {
 
   final packageInfo = await PackageInfo.fromPlatform();
 
-  return 'Solian/${packageInfo.version}+${packageInfo.buildNumber} ($platformInfo)';
+  return 'Dynamic/${packageInfo.version}+${packageInfo.buildNumber} ($platformInfo)';
 });
 
 const String _chatE2eeCapability = 'chat-e2ee-v1';
@@ -692,7 +692,7 @@ class _StoredTokenPair {
 }
 
 // ==========================================
-// Solar Network SDK Client Provider
+// Dynamic Network SDK Client Provider
 // ==========================================
 
 /// Provider for the SolarNetworkClient instance.

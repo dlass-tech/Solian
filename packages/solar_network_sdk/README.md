@@ -65,7 +65,7 @@ final client = WebAuthClient(
   webUrl: 'https://app.solian.fr',
 );
 
-// Step 1: request challenge (opens Solian app)
+// Step 1: request challenge (opens Dynamic app)
 final challengeUrl = client.getProtocolChallengeUrl(
   appSlug: 'sopush',
   redirectUri: 'acme://auth/callback',

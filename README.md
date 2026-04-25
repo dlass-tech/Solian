@@ -1,7 +1,7 @@
-# Solian (Solar Network)
+# Dynamic (Solar Network)
 
 <p align="center">
-  <img src="assets/icons/icon.png" width="120" alt="Solian Logo">
+  <img src="assets/icons/icon.png" width="120" alt="Dynamic Logo">
 </p>
 
 <p align="center">
@@ -16,7 +16,7 @@
 
 ---
 
-Solian (also known as Solar Network) is a social networking platform, designed to help you express yourself freely and connect with others. We're not aiming to replace any major platform—just providing another peaceful community for you to be part of.
+Dynamic (also known as Solar Network) is a social networking platform, designed to help you express yourself freely and connect with others. We're not aiming to replace any major platform—just providing another peaceful community for you to be part of.
 
 Note: Fediverse support is currently experimental and limited.
 

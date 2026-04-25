@@ -66,7 +66,7 @@ Future<void> _speakNotification(
 
 Future<void> initializeLocalNotifications(WidgetRef _) async {
   // Initialize Windows notification for Windows platform
-  windowsNotification = winty.WindowsNotification(applicationId: "Solian");
+  windowsNotification = winty.WindowsNotification(applicationId: "Dynamic");
 
   WidgetsBinding.instance.addObserver(
     LifecycleEventHandler(onAppLifecycleChanged: _onAppLifecycleChanged),

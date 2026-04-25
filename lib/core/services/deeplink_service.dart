@@ -10,7 +10,7 @@ class DeeplinkService {
   factory DeeplinkService() => _instance;
   DeeplinkService._internal();
 
-  StreamSubscription<SolianDeepLinkEvent>? _solianDeepLinkSub;
+  StreamSubscription<DynamicDeepLinkEvent>? _solianDeepLinkSub;
   ProtocolListener? _protocolListener;
   void Function(Uri uri)? _onDeepLink;
 
@@ -18,7 +18,7 @@ class DeeplinkService {
     _onDeepLink = onDeepLink;
 
     _solianDeepLinkSub?.cancel();
-    _solianDeepLinkSub = eventBus.on<SolianDeepLinkEvent>().listen((event) {
+    _solianDeepLinkSub = eventBus.on<DynamicDeepLinkEvent>().listen((event) {
       _onDeepLink?.call(event.uri);
     });
 

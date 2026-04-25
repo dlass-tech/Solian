@@ -549,7 +549,7 @@ class StellarProgramTab extends HookConsumerWidget {
                           spacing: 12,
                           children: [
                             Text(
-                              'Stellar Program allows your unlocks more personalization settings on the Solar Network. And most imporantly, it helps support the development of the Solian and the Solar Network!',
+                              'Stellar Program allows your unlocks more personalization settings on the Dynamic Network. And most imporantly, it helps support the development of the Dynamic and the Dynamic Network!',
                             ),
                             Text(
                               'To learn more about the Stellar Program benefits, scroll the page to see the comparison table.',
