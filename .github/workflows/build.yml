@@ -7,72 +7,40 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-web:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Clone repository
-        uses: actions/checkout@v4
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
-      - run: flutter pub get
-      - run: flutter build web --release
-      - name: Archive production artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-output-web
-          path: build/web
+  build:
+    name: ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - web
+          - windows
+          - linux
+          - android
+        include:
+          - platform: web
+            os: ubuntu-latest
+          - platform: windows
+            os: windows-latest
+          - platform: linux
+            os: ubuntu-latest
+          - platform: android
+            os: ubuntu-latest
 
-  build-exe:
-    runs-on: windows-latest
     steps:
       - name: Clone repository
         uses: actions/checkout@v4
+
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
-      - run: flutter pub get
-      - run: flutter build windows
-      - name: Extract Version
-        id: extract_version
+
+      - name: Install Linux Dependencies
+        if: matrix.platform == 'linux'
         run: |
-          $pubspec = Get-Content pubspec.yaml -Raw
-          if ($pubspec -match 'version:\s*(\d+\.\d+\.\d+)\+(\d+)') {
-            $appVersion = $matches[1]
-            $buildNumber = $matches[2]
-            Write-Host "app_version=$appVersion" >> $env:GITHUB_OUTPUT
-            Write-Host "build_number=$buildNumber" >> $env:GITHUB_OUTPUT
-          }
-      - name: Archive production artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-output-windows
-          path: build/windows/x64/runner/Release
-      - name: Compile Installer
-        uses: Minionguyjpro/Inno-Setup-Action@v1.2.2
-        with:
-          path: setup.iss
-          options: "/DAppVersion=${{ steps.extract_version.outputs.app_version }} /DBuildNumber=${{ steps.extract_version.outputs.build_number }}"
-      - name: Archive installer artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-output-windows-installer
-          path: Installer/windows-x86_64-setup.exe
-
-  build-linux:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Clone repository
-        uses: actions/checkout@v4
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-      - run: |
           sudo apt-get update -y
           sudo apt-get install -y ninja-build libgtk-3-dev
           sudo apt-get install -y libmpv-dev mpv
@@ -82,16 +50,59 @@ jobs:
           sudo apt-get install -y libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
           sudo apt-get install -y gstreamer-1.0
           sudo apt-get install -y libsecret-1-dev
-      - run: flutter pub get
-      - run: flutter build linux --no-tree-shake-icons
-      - name: Archive production artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-output-linux
-          path: build/linux/x64/release/bundle
-      - name: Build AppImage
+
+      # Android 签名还原 完全适配你的目录
+      - name: Restore Android Signing Files
+        if: matrix.platform == 'android'
         run: |
-          rm -r Solian.AppDir | true
+          echo "${{ secrets.ANDROID_KEY_PROPS }}" > android/key.properties
+          mkdir -p android/app/keystore
+          echo "${{ secrets.ANDROID_DC_JKS_BASE64 }}" | base64 -d > android/app/keystore/dc.jks
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Build Web
+        if: matrix.platform == 'web'
+        run: flutter build web --release
+
+      - name: Build Windows
+        if: matrix.platform == 'windows'
+        run: flutter build windows
+
+      - name: Build Linux
+        if: matrix.platform == 'linux'
+        run: flutter build linux --no-tree-shake-icons
+
+      - name: Build Android Release APK
+        if: matrix.platform == 'android'
+        run: flutter build apk --release --split-per-abi
+
+      # Windows 版本提取
+      - name: Extract Version
+        if: matrix.platform == 'windows'
+        id: extract_version
+        run: |
+          $pubspec = Get-Content pubspec.yaml -Raw
+          if ($pubspec -match 'version:\s*(\d+\.\d+\.\d+)\+(\d+)') {
+            $appVersion = $matches[1]
+            $buildNumber = $matches[2]
+            Write-Host "app_version=$appVersion" >> $env:GITHUB_OUTPUT
+            Write-Host "build_number=$buildNumber" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Compile Installer
+        if: matrix.platform == 'windows'
+        uses: Minionguyjpro/Inno-Setup-Action@v1.2.2
+        with:
+          path: setup.iss
+          options: "/DAppVersion=${{ steps.extract_version.outputs.app_version }} /DBuildNumber=${{ steps.extract_version.outputs.build_number }}"
+
+      # Linux AppImage
+      - name: Build AppImage
+        if: matrix.platform == 'linux'
+        run: |
+          rm -r Solian.AppDir || true
           mkdir Solian.AppDir
           cp -r build/linux/x64/release/bundle/* Solian.AppDir
           cp -r buildtools/appimage_config/* Solian.AppDir
@@ -99,8 +110,46 @@ jobs:
           sudo chmod +x buildtools/appimagetool-x86_64.AppImage
           sudo chmod +x Solian.AppDir/AppRun
           ./buildtools/appimagetool-x86_64.AppImage Solian.AppDir
+
+      # 产物上传
+      - name: Archive web artifacts
+        if: matrix.platform == 'web'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output-web
+          path: build/web
+
+      - name: Archive windows artifacts
+        if: matrix.platform == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output-windows
+          path: build/windows/x64/runner/Release
+
+      - name: Archive installer artifacts
+        if: matrix.platform == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output-windows-installer
+          path: Installer/windows-x86_64-setup.exe
+
+      - name: Archive linux artifacts
+        if: matrix.platform == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output-linux
+          path: build/linux/x64/release/bundle
+
       - name: Archive AppImage artifacts
+        if: matrix.platform == 'linux'
         uses: actions/upload-artifact@v4
         with:
           name: build-output-linux-appimage
           path: "./*.AppImage*"
+
+      - name: Archive Android APK
+        if: matrix.platform == 'android'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output-android
+          path: build/app/outputs/flutter-apk/
