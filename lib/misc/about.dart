@@ -28,7 +28,7 @@ class AboutScreen extends ConsumerStatefulWidget {
 class _AboutScreenState extends ConsumerState<AboutScreen> {
   PackageInfo _packageInfo = PackageInfo(
     appName: 'Dynamic',
-    packageName: 'dev.solsynth.solian',
+    packageName: 'com.zhaishis.dyci',
     version: '1.0.0',
     buildNumber: '1',
   );
@@ -211,7 +211,7 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
                             icon: Symbols.privacy_tip,
                             title: 'aboutScreenPrivacyPolicyTitle'.tr(),
                             onTap: () => _launchURL(
-                              'https://solsynth.dev/terms/privacy-policy',
+                              'https://zhaishis.com/terms/privacy-policy',
                             ),
                           ),
                           _buildListTile(
@@ -219,7 +219,7 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
                             icon: Symbols.description,
                             title: 'aboutScreenTermsOfServiceTitle'.tr(),
                             onTap: () => _launchURL(
-                              'https://solsynth.dev/terms/user-agreement',
+                              'https://zhaishis.com/terms/user-agreement',
                             ),
                           ),
                           _buildListTile(
@@ -258,7 +258,7 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
                             title: 'aboutScreenLicenseTitle'.tr(),
                             subtitle: 'aboutScreenLicenseContent'.tr(),
                             onTap: () => _launchURL(
-                              'https://github.com/Solsynth/Dynamic/blob/v3/LICENSE.txt',
+                              'https://github.com/dlass-tech/Solian/v3/LICENSE.txt',
                             ),
                           ),
                           if (kIsWeb || !(Platform.isMacOS || Platform.isIOS))
@@ -269,7 +269,7 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
                               subtitle: 'donateDescription'.tr(),
                               onTap: () {
                                 launchUrlString(
-                                  'https://afdian.com/@littlesheep',
+                                  'https://afdian.com/@TenShine',
                                 );
                               },
                             ),

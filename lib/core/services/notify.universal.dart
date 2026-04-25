@@ -81,8 +81,8 @@ Future<void> initializeLocalNotifications(WidgetRef ref) async {
   const WindowsInitializationSettings initializationSettingsWindows =
       WindowsInitializationSettings(
         appName: 'Island',
-        appUserModelId: 'dev.solsynth.solian',
-        guid: 'dev.solsynth.solian',
+        appUserModelId: 'com.zhaishis.dyci',
+        guid: 'com.zhaishis.dyci',
       );
 
   const InitializationSettings initializationSettings = InitializationSettings(

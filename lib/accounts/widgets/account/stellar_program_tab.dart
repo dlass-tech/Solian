@@ -653,7 +653,7 @@ class StellarProgramTab extends HookConsumerWidget {
           // Terms Link
           InkWell(
             onTap: () => launchUrlString(
-              'https://solsynth.dev/terms/user-agreement',
+              'https://zhaishis.com/terms/user-agreement',
               mode: LaunchMode.externalApplication,
             ),
             child: Text(

@@ -135,10 +135,10 @@ class UpdateService {
   final Dio _dio;
   final bool useProxy;
 
-  static const _proxyBaseUrl = 'https://ghfast.top/';
+  static const _proxyBaseUrl = 'https://gh.zhaishis.com/';
 
   static const _releasesLatestApi =
-      'https://api.github.com/repos/solsynth/solian/releases/latest';
+      'https://api.github.com/repos/dlass-tech/solian/releases/latest';
 
   /// Checks GitHub for the latest release and compares against the current app version.
   /// If update is available, shows a bottom sheet with changelog and an action to open release page.
@@ -257,17 +257,17 @@ class UpdateService {
 
     // Prioritize arm64, then armeabi, then x86_64
     if (arm64 != null) {
-      return 'https://fs.solsynth.dev/d/official/solian/${arm64.name}';
+      return 'https://fs.dy.ci/d/official/solian/${arm64.name}';
     } else if (armeabi != null) {
-      return 'https://fs.solsynth.dev/d/official/solian/${armeabi.name}';
+      return 'https://fs.dy.ci/d/official/solian/${armeabi.name}';
     } else if (x86_64 != null) {
-      return 'https://fs.solsynth.dev/d/official/solian/${x86_64.name}';
+      return 'https://fs.dy.ci/d/official/solian/${x86_64.name}';
     }
     return null;
   }
 
   String _getWindowsUpdateUrl() {
-    return 'https://fs.solsynth.dev/d/official/solian/build-output-windows-installer.zip';
+    return 'https://fs.dy.ci/d/official/solian/build-output-windows-installer.zip';
   }
 
   /// Performs automatic Windows update: download, extract, and install
@@ -624,7 +624,7 @@ class _UpdateSheetState extends State<_UpdateSheet> {
     String downloadUrl = url;
     if (_useProxy) {
       final fileName = url.split('/').last;
-      downloadUrl = 'https://fs.solsynth.dev/d/rainyun02/solian/$fileName';
+      downloadUrl = 'https://fs.dy.ci/d/rainyun02/solian/$fileName';
     }
 
     UpdateModel model = UpdateModel(

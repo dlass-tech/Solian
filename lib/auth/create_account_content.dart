@@ -529,7 +529,7 @@ class _CreateAccountTermsScreen extends HookConsumerWidget {
                     color: Colors.transparent,
                     child: InkWell(
                       onTap: () {
-                        launchUrlString('https://solsynth.dev/terms');
+                        launchUrlString('https://zhaishis.com/terms');
                       },
                       child: Row(
                         mainAxisSize: MainAxisSize.min,

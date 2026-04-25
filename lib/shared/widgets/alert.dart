@@ -443,7 +443,7 @@ void showNotification({
 }
 
 Future<void> openExternalLink(Uri url, WidgetRef ref) async {
-  final whitelistDomains = ['dy.ci', 'solsynth.dev'];
+  final whitelistDomains = ['dy.ci', 'zhaishis.com'];
   if (whitelistDomains.any(
     (domain) => url.host == domain || url.host.endsWith('.$domain'),
   )) {

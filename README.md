@@ -9,9 +9,9 @@
 </p>
 
 <p align="center">
-  <a href="LICENSE.txt"><img src="https://img.shields.io/github/license/Solsynth/HyperNet.Surface" alt="License"></a>
+  <a href="LICENSE.txt"><img src="https://img.shields.io/github/license/Dynamic Team/HyperNet.Surface" alt="License"></a>
   <a href="https://crowdin.com/project/solian"><img src="https://badges.crowdin.net/solian/localized.svg" alt="Localization Status"></a>
-  <a href="https://github.com/Solsynth/HyperNet.Surface/releases"><img src="https://img.shields.io/github/v/release/Solsynth/HyperNet.Surface?include_prereleases" alt="Latest Release"></a>
+  <a href="https://github.com/Dynamic Team/HyperNet.Surface/releases"><img src="https://img.shields.io/github/v/release/Dynamic Team/HyperNet.Surface?include_prereleases" alt="Latest Release"></a>
 </p>
 
 ---
@@ -22,7 +22,7 @@ Note: Fediverse support is currently experimental and limited.
 
 > **Help us translate!** Click the Crowdin badge above to contribute translations.
 >
-> If you read Chinese, visit our documentation: [Suki - Solar Network](https://kb.solsynth.dev/zh/solar-network) | [中文 README](./README_CN.md)
+> If you read Chinese, visit our documentation: [Suki - Solar Network](https://kb.zhaishis.com/zh/solar-network) | [中文 README](./README_CN.md)
 
 ---
 
@@ -74,7 +74,7 @@ Note: Fediverse support is currently experimental and limited.
 ### For Users
 
 1. **Download the App**
-   - Visit [GitHub Releases](https://github.com/Solsynth/HyperNet.Surface/releases) to download the latest version for your platform
+   - Visit [GitHub Releases](https://github.com/Dynamic Team/HyperNet.Surface/releases) to download the latest version for your platform
    - **Stable vs Pre-release:** Pre-releases include cutting-edge features but may have untested changes. Since we don't use API versioning, breaking changes may affect stable releases—consider using pre-releases for the best experience.
 
 2. **Create an Account**
@@ -127,8 +127,8 @@ This repository is organized as a monorepo containing useful Dart packages under
 
 Want to build with Solar Network? Check out:
 
-- [Documentation](https://kb.solsynth.dev)
-- [API Reference](https://api.solsynth.dev)
+- [Documentation](https://kb.zhaishis.com)
+- [API Reference](https://api.zhaishis.com)
 - [`packages/solar_network_sdk`](./packages/solar_network_sdk) - Official Dart SDK
 
 ---
@@ -136,7 +136,7 @@ Want to build with Solar Network? Check out:
 ## Server
 
 The backend powering Solar Network is available at:
-**[Solsynth/DysonNetwork](https://github.com/Solsynth/DysonNetwork)**
+**[Dynamic Team/DysonNetwork](https://github.com/Dynamic Team/DysonNetwork)**
 
 ---
 
@@ -154,8 +154,8 @@ The backend powering Solar Network is available at:
 
 We welcome contributions! Please read our [Code of Conduct](./CODE_OF_CONDUCT.md) before participating.
 
-- [Report bugs](https://github.com/Solsynth/HyperNet.Surface/issues)
-- [Suggest features](https://github.com/Solsynth/HyperNet.Surface/discussions)
+- [Report bugs](https://github.com/Dynamic Team/HyperNet.Surface/issues)
+- [Suggest features](https://github.com/Dynamic Team/HyperNet.Surface/discussions)
 - [Translate the app](https://crowdin.com/project/solian)
 
 ---
