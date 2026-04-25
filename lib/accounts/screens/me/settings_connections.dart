@@ -179,7 +179,7 @@ class AccountConnectionNewSheet extends HookConsumerWidget {
             final credential = await SignInWithApple.getAppleIDCredential(
               scopes: [AppleIDAuthorizationScopes.email],
               webAuthenticationOptions: WebAuthenticationOptions(
-                clientId: 'dev.solsynth.solarpass',
+                clientId: 'com.zhaishis.dyci.pass',
                 redirectUri: Uri.parse('https://dy.ci/auth/callback'),
               ),
             );

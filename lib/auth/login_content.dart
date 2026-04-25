@@ -903,7 +903,7 @@ class _LoginLookupScreen extends HookConsumerWidget {
         final credential = await SignInWithApple.getAppleIDCredential(
           scopes: [AppleIDAuthorizationScopes.email],
           webAuthenticationOptions: WebAuthenticationOptions(
-            clientId: 'dev.solsynth.solarpass',
+            clientId: 'com.zhaishis.dyci.pass',
             redirectUri: Uri.parse('https://nt.dy.ci/auth/callback/apple'),
           ),
         );
@@ -1108,7 +1108,7 @@ class _LoginLookupScreen extends HookConsumerWidget {
                         ],
                       ),
                       onTap: () {
-                        launchUrlString('https://solsynth.dev/terms');
+                        launchUrlString('https://zhaishis.com/terms');
                       },
                     ),
                   ),

@@ -61,7 +61,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '598989124218',
     projectId: 'dyci-f35aa',
     storageBucket: 'dyci-f35aa.firebasestorage.app',
-    iosBundleId: 'dev.solsynth.solian',
+    iosBundleId: 'com.zhaishis.dyci',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
@@ -70,7 +70,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '598989124218',
     projectId: 'dyci-f35aa',
     storageBucket: 'dyci-f35aa.firebasestorage.app',
-    iosBundleId: 'dev.solsynth.solian',
+    iosBundleId: 'com.zhaishis.dyci',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(

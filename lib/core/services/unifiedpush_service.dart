@@ -16,7 +16,7 @@ import 'package:unifiedpush_storage_interface/registrations_storage.dart';
 import 'package:unifiedpush_storage_interface/storage.dart';
 
 const kUnifiedPushInstance = 'island-main';
-const kUnifiedPushDbusName = 'dev.solsynth.solian';
+const kUnifiedPushDbusName = 'com.zhaishis.dyci';
 
 bool _isInitialized = false;
 Completer<PushEndpoint>? _registrationCompleter;

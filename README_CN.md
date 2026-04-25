@@ -9,9 +9,9 @@
 </p>
 
 <p align="center">
-  <a href="LICENSE.txt"><img src="https://img.shields.io/github/license/Solsynth/HyperNet.Surface" alt="License"></a>
+  <a href="LICENSE.txt"><img src="https://img.shields.io/github/license/Dynamic Team/HyperNet.Surface" alt="License"></a>
   <a href="https://crowdin.com/project/solian"><img src="https://badges.crowdin.net/solian/localized.svg" alt="Localization Status"></a>
-  <a href="https://github.com/Solsynth/HyperNet.Surface/releases"><img src="https://img.shields.io/github/v/release/Solsynth/HyperNet.Surface?include_prereleases" alt="Latest Release"></a>
+  <a href="https://github.com/Dynamic Team/HyperNet.Surface/releases"><img src="https://img.shields.io/github/v/release/Dynamic Team/HyperNet.Surface?include_prereleases" alt="Latest Release"></a>
 </p>
 
 ---
@@ -24,7 +24,7 @@ Dynamic（又名 Solar Network）是一个社交平台，旨在帮助你自由�
 
 > **帮助我们翻译！** 点击上方的 Crowdin 徽章参与翻译贡献。
 >
-> 中文文档：[Suki - Solar Network](https://kb.solsynth.dev/zh/solar-network) | [English README](./README.md)
+> 中文文档：[Suki - Solar Network](https://kb.zhaishis.com/zh/solar-network) | [English README](./README.md)
 
 ---
 
@@ -76,7 +76,7 @@ Dynamic（又名 Solar Network）是一个社交平台，旨在帮助你自由�
 ### 普通用户
 
 1. **下载应用**
-   - 访问 [GitHub Releases](https://github.com/Solsynth/HyperNet.Surface/releases) 下载适合你平台的最新版本
+   - 访问 [GitHub Releases](https://github.com/Dynamic Team/HyperNet.Surface/releases) 下载适合你平台的最新版本
    - **稳定版与预发布版的区别：** 预发布版包含最新功能但可能未经充分测试。由于我们不做 API 版本控制，破坏性更新可能会影响稳定版，因此建议使用预发布版以获得最佳体验。
 
 2. **创建账号**
@@ -129,8 +129,8 @@ flutter build <platform>
 
 想要基于 Solar Network 进行开发？查看以下资源：
 
-- [开发文档](https://kb.solsynth.dev)
-- [API 文档](https://api.solsynth.dev)
+- [开发文档](https://kb.zhaishis.com)
+- [API 文档](https://api.zhaishis.com)
 - [`packages/solar_network_sdk`](./packages/solar_network_sdk) - 官方 Dart SDK
 
 ---
@@ -138,7 +138,7 @@ flutter build <platform>
 ## 服务端
 
 Solar Network 的后端服务位于：
-**[Solsynth/DysonNetwork](https://github.com/Solsynth/DysonNetwork)**
+**[Dynamic Team/DysonNetwork](https://github.com/Dynamic Team/DysonNetwork)**
 
 ---
 
@@ -156,8 +156,8 @@ Solar Network 的后端服务位于：
 
 我们欢迎各种形式的贡献！参与前请阅读我们的[行为准则](./CODE_OF_CONDUCT.md)。
 
-- [报告 Bug](https://github.com/Solsynth/HyperNet.Surface/issues)
-- [建议新功能](https://github.com/Solsynth/HyperNet.Surface/discussions)
+- [报告 Bug](https://github.com/Dynamic Team/HyperNet.Surface/issues)
+- [建议新功能](https://github.com/Dynamic Team/HyperNet.Surface/discussions)
 - [参与应用翻译](https://crowdin.com/project/solian)
 
 ---

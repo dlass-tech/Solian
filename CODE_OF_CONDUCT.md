@@ -20,7 +20,7 @@ All the commit message should follow `:[gitmoji]: <commit message>` syntax
 
 ## Translations & Localization
 
-We're not accepting translation and localization improvements, or fixes on the GitHub or Solsynth Git Repository. If you want to contribute to those, please head to our Crowdin project: <https://crowdin.com/project/solian>
+We're not accepting translation and localization improvements, or fixes on the GitHub or Dynamic Team Git Repository. If you want to contribute to those, please head to our Crowdin project: <https://crowdin.com/project/solian>
 
 ## New Features
 

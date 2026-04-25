@@ -1,4 +1,4 @@
-// Copyright (c) Solsynth
+// Copyright (c) Dynamic Team
 // Sensitive content categories for content warnings, in fixed order.
 
 enum SensitiveCategory {

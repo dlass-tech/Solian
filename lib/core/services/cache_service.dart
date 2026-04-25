@@ -34,7 +34,7 @@ class DiskSpaceInfo {
 }
 
 class CacheService {
-  static const _nativeChannel = MethodChannel('dev.solsynth.solian/cache');
+  static const _nativeChannel = MethodChannel('com.zhaishis.dyci/cache');
 
   static Future<DiskSpaceInfo?> getDiskSpace() async {
     try {

@@ -302,7 +302,7 @@ class StartupSplashScreen extends HookConsumerWidget {
                           ),
                         ),
                       Text(
-                        '${DateTime.now().year} © Solsynth LLC',
+                        '${DateTime.now().year} © Dynamic Team',
                         textAlign: TextAlign.center,
                         style: TextStyle(fontSize: 11, color: unFocusColor),
                       ),
