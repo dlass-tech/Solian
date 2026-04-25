@@ -719,7 +719,7 @@ class ExploreScreen extends HookConsumerWidget {
                   const Icon(Symbols.emoji_people_rounded, size: 40),
                   const Gap(8),
                   Text(
-                    'Welcome to\nthe Solar Network',
+                    'Welcome to\nthe Dynamic Network',
                     style: Theme.of(context).textTheme.titleLarge,
                     textAlign: TextAlign.center,
                   ).bold(),

@@ -255,7 +255,7 @@ class PostItemScreenshot extends HookConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'Solar Network',
+                        'Dynamic Network',
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.bold,

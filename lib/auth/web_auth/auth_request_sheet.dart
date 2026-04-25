@@ -162,7 +162,7 @@ class AuthRequestSheet extends ConsumerWidget {
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        'This app will have access to your Solar Network account with your current session.',
+                        'This app will have access to your Dynamic Network account with your current session.',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),

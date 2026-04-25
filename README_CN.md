@@ -1,7 +1,7 @@
-# Solian (Solar Network)
+# Dynamic (Solar Network)
 
 <p align="center">
-  <img src="assets/icons/icon.png" width="120" alt="Solian Logo">
+  <img src="assets/icons/icon.png" width="120" alt="Dynamic Logo">
 </p>
 
 <p align="center">
@@ -16,7 +16,7 @@
 
 ---
 
-Solian（又名 Solar Network）是一个社交平台，旨在帮助你自由表达自我并与他人建立联系。我们并不打算取代任何主流平台——只是为你提供另一个宁静和谐的社区选择。
+Dynamic（又名 Solar Network）是一个社交平台，旨在帮助你自由表达自我并与他人建立联系。我们并不打算取代任何主流平台——只是为你提供另一个宁静和谐的社区选择。
 
 注意：联邦宇宙（Fediverse）支持目前处于实验阶段，功能有限。
 

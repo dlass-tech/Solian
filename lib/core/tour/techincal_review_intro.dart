@@ -16,7 +16,7 @@ class TechicalReviewIntroWidget extends StatelessWidget {
           children: [
             Text('👋').fontSize(32),
             Text('你好呀～').fontSize(24),
-            Text('欢迎来使用 Solar Network 3.0 的技术性预览版。'),
+            Text('欢迎来使用 Dynamic Network 3.0 的技术性预览版。'),
             const Gap(24),
             Text('技术性预览的初衷是让我们更顺滑的将 3.0 发布出来，帮助我们一点一点的迁移数据。'),
             const Gap(24),

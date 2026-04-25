@@ -124,10 +124,10 @@ class ShowThoughtSheetEvent {
 
 /// Event fired when a custom solian:// deep link is received on platforms
 /// that deliver it via sharing intents.
-class SolianDeepLinkEvent {
+class DynamicDeepLinkEvent {
   final Uri uri;
 
-  const SolianDeepLinkEvent(this.uri);
+  const DynamicDeepLinkEvent(this.uri);
 }
 
 /// Event fired when MLS epoch changes for a room

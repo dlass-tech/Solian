@@ -1,12 +1,12 @@
 # Web Auth Protocol (solian://auth/web)
 
 This document describes the native APP_CONNECT-compatible web auth trigger
-handled by Solian via deep link protocol:
+handled by Dynamic via deep link protocol:
 
 - `solian://auth/web`
 
 It is designed for native apps (for example iOS/Android custom URI schemes)
-that need challenge and token exchange through the Solian app.
+that need challenge and token exchange through the Dynamic app.
 
 ## Overview
 
@@ -15,7 +15,7 @@ Two deep-link calls are supported:
 1. Challenge request
 2. Token exchange request
 
-Both calls require `redirect_uri` so Solian can return result data to your app.
+Both calls require `redirect_uri` so Dynamic can return result data to your app.
 
 ## Challenge Request
 
@@ -27,9 +27,9 @@ solian://auth/web?app=<app_slug>&redirect_uri=<encoded_redirect_uri>&state=<opti
 
 Parameters:
 
-- `app`: app slug (required). Solian resolves app metadata from `/develop/apps/<slug>`.
+- `app`: app slug (required). Dynamic resolves app metadata from `/develop/apps/<slug>`.
 - `redirect_uri`: your app callback URI (must include a scheme), e.g. `acme://auth/callback`.
-- `state` (optional): opaque value that Solian echoes back.
+- `state` (optional): opaque value that Dynamic echoes back.
 
 Success callback:
 
@@ -87,7 +87,7 @@ These produce properly encoded `solian://auth/web` URLs.
 
 ## Notes
 
-- Solian expects snake_case fields for APP_CONNECT payloads.
+- Dynamic expects snake_case fields for APP_CONNECT payloads.
 - `redirect_uri` must be a valid URI with scheme.
 - Successful exchange may also include `refresh_token`, `expires_in`, and `refresh_expires_in`.
 - The local app validates `challenge + signature (+ secret_id)` before creating session tokens.

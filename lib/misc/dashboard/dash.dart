@@ -862,7 +862,7 @@ class _UnauthorizedCard extends HookConsumerWidget {
             ),
             const Gap(16),
             Text(
-              'Welcome to\nthe Solar Network',
+              'Welcome to\nthe Dynamic Network',
               style: Theme.of(
                 context,
               ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
