@@ -35,6 +35,7 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: 3.41.7
           channel: stable
           cache: true
 
@@ -48,10 +49,9 @@ jobs:
           sudo apt-get install -y keybinder-3.0
           sudo apt-get install -y libnotify-dev
           sudo apt-get install -y libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
-          sudo apt-get install -y gstreamer-1.0
-          sudo apt-get install -y libsecret-1-dev
+          sudo apt-get install -y gstreamer-1.0 libsecret-1-dev
 
-      # Android 签名还原 完全适配你的目录
+      # 精准还原安卓签名文件
       - name: Restore Android Signing Files
         if: matrix.platform == 'android'
         run: |
@@ -62,24 +62,24 @@ jobs:
       - name: Install Dependencies
         run: flutter pub get
 
-      - name: Build Web
+      - name: Build Web Release
         if: matrix.platform == 'web'
         run: flutter build web --release
 
-      - name: Build Windows
+      - name: Build Windows Release
         if: matrix.platform == 'windows'
-        run: flutter build windows
+        run: flutter build windows --release
 
-      - name: Build Linux
+      - name: Build Linux Release
         if: matrix.platform == 'linux'
-        run: flutter build linux --no-tree-shake-icons
+        run: flutter build linux --no-tree-shake-icons --release
 
-      - name: Build Android Release APK
+      - name: Build Android Signed Release
         if: matrix.platform == 'android'
         run: flutter build apk --release --split-per-abi
 
-      # Windows 版本提取
-      - name: Extract Version
+      # Windows 版本解析 & 安装包
+      - name: Extract Version Info
         if: matrix.platform == 'windows'
         id: extract_version
         run: |
@@ -91,65 +91,65 @@ jobs:
             Write-Host "build_number=$buildNumber" >> $env:GITHUB_OUTPUT
           }
 
-      - name: Compile Installer
+      - name: Build Windows Installer
         if: matrix.platform == 'windows'
         uses: Minionguyjpro/Inno-Setup-Action@v1.2.2
         with:
           path: setup.iss
           options: "/DAppVersion=${{ steps.extract_version.outputs.app_version }} /DBuildNumber=${{ steps.extract_version.outputs.build_number }}"
 
-      # Linux AppImage
-      - name: Build AppImage
+      # Linux AppImage 打包
+      - name: Build Linux AppImage
         if: matrix.platform == 'linux'
         run: |
-          rm -r Solian.AppDir || true
-          mkdir Solian.AppDir
+          rm -rf Solian.AppDir || true
+          mkdir -p Solian.AppDir
           cp -r build/linux/x64/release/bundle/* Solian.AppDir
-          cp -r buildtools/appimage_config/* Solian.AppDir
-          cp assets/icons/icon-padded.png Solian.AppDir
-          sudo chmod +x buildtools/appimagetool-x86_64.AppImage
-          sudo chmod +x Solian.AppDir/AppRun
+          [ -d buildtools/appimage_config ] && cp -r buildtools/appimage_config/* Solian.AppDir
+          [ -f assets/icons/icon-padded.png ] && cp assets/icons/icon-padded.png Solian.AppDir
+          chmod +x buildtools/appimagetool-x86_64.AppImage
+          chmod +x Solian.AppDir/AppRun
           ./buildtools/appimagetool-x86_64.AppImage Solian.AppDir
 
-      # 产物上传
-      - name: Archive web artifacts
+      # 全部产物上传
+      - name: Upload Web Build
         if: matrix.platform == 'web'
         uses: actions/upload-artifact@v4
         with:
           name: build-output-web
           path: build/web
 
-      - name: Archive windows artifacts
+      - name: Upload Windows Build
         if: matrix.platform == 'windows'
         uses: actions/upload-artifact@v4
         with:
           name: build-output-windows
           path: build/windows/x64/runner/Release
 
-      - name: Archive installer artifacts
+      - name: Upload Windows Installer
         if: matrix.platform == 'windows'
         uses: actions/upload-artifact@v4
         with:
           name: build-output-windows-installer
           path: Installer/windows-x86_64-setup.exe
 
-      - name: Archive linux artifacts
+      - name: Upload Linux Bundle
         if: matrix.platform == 'linux'
         uses: actions/upload-artifact@v4
         with:
           name: build-output-linux
           path: build/linux/x64/release/bundle
 
-      - name: Archive AppImage artifacts
+      - name: Upload Linux AppImage
         if: matrix.platform == 'linux'
         uses: actions/upload-artifact@v4
         with:
           name: build-output-linux-appimage
           path: "./*.AppImage*"
 
-      - name: Archive Android APK
+      - name: Upload Android Signed APK
         if: matrix.platform == 'android'
         uses: actions/upload-artifact@v4
         with:
-          name: build-output-android
+          name: build-output-android-signed
           path: build/app/outputs/flutter-apk/
