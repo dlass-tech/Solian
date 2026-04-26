@@ -14,7 +14,7 @@ AppSupportURL=https://zhaishis.com
 AppUpdatesURL=https://github.com/dlass-tech/Solian/releases
 AppCopyright=Copyright © 2026 zhaishis
 VersionInfoVersion={#FullVersion}
-UninstallDisplayName=呆兮
+UninstallDisplayName=每刻
 UninstallDisplayIcon={app}\dyci.exe
 
 DefaultDirName={commonpf}\dyci
@@ -44,9 +44,9 @@ Name: "{autodesktop}\dyci"; Filename: "{app}\dyci.exe"; Tasks: desktopicon
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Run]
-Filename: "{app}\dyci.exe"; Description: "启动呆兮"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\dyci.exe"; Description: "启动每刻社区"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{userappdata}\zhaishis\dyci"
-Type: files; Name: "{group}\呆兮.lnk" ;
-Type: files; Name: "{autodesktop}\呆兮.lnk" ;
+Type: files; Name: "{group}\每刻.lnk" ;
+Type: files; Name: "{autodesktop}\每刻.lnk" ;
