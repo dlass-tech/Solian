@@ -85,7 +85,6 @@ jobs:
 
       - name: Extract Version Info
         if: matrix.platform == 'windows'
-        id: extract_version
         shell: powershell
         run: |
           $pubspec = Get-Content pubspec.yaml -Raw
@@ -172,8 +171,8 @@ jobs:
         run: |
           curl --connect-timeout 10 ${{ secrets.R2_ENDPOINT_URL }} -I
 
-      - name: Upload Release Files To R2
-        if: matrix.platform != 'web'
+      - name: Upload Windows Files To R2
+        if: matrix.platform == 'windows'
         continue-on-error: true
         uses: rygirassu/r2-upload-action@v1
         with:
@@ -184,12 +183,39 @@ jobs:
           target-dir: solian
           overwrite: true
           strip-path: true
-          files: ${{ 
-            matrix.platform == 'windows' 
-              ? 'Installer/windows-x86_64-setup.exe,windows-portable.zip' 
-            : matrix.platform == 'linux' 
-              ? 'Solian.AppImage,linux-bundle.zip' 
-            : matrix.platform == 'android' 
-              ? 'build/app/outputs/flutter-apk/app-arm64-v8a-release.apk,build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk,build/app/outputs/flutter-apk/app-x86_64-release.apk'
-            : ''
-          }}
+          files: |
+            Installer/windows-x86_64-setup.exe
+            windows-portable.zip
+
+      - name: Upload Linux Files To R2
+        if: matrix.platform == 'linux'
+        continue-on-error: true
+        uses: rygirassu/r2-upload-action@v1
+        with:
+          r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          r2-bucket: ${{ secrets.R2_BUCKET_NAME }}
+          r2-endpoint: ${{ secrets.R2_ENDPOINT_URL }}
+          target-dir: solian
+          overwrite: true
+          strip-path: true
+          files: |
+            Solian.AppImage
+            linux-bundle.zip
+
+      - name: Upload Android Files To R2
+        if: matrix.platform == 'android'
+        continue-on-error: true
+        uses: rygirassu/r2-upload-action@v1
+        with:
+          r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          r2-bucket: ${{ secrets.R2_BUCKET_NAME }}
+          r2-endpoint: ${{ secrets.R2_ENDPOINT_URL }}
+          target-dir: solian
+          overwrite: true
+          strip-path: true
+          files: |
+            build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+            build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+            build/app/outputs/flutter-apk/app-x86_64-release.apk
