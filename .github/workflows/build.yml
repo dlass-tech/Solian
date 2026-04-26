@@ -32,7 +32,6 @@ jobs:
       - name: Clone repository
         uses: actions/checkout@v4
 
-      # 全局固定 JDK17 解决安卓编译版本冲突
       - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
@@ -50,9 +49,8 @@ jobs:
         if: matrix.platform == 'linux'
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y ninja-build libgtk-3-dev libmpv-dev mpv libayatana-appindicator3-dev keybinder-3.0 libnotify-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer-1.0 libsecret-1-dev
+          sudo apt-get install -y ninja-build libgtk-3-dev libmpv-dev mpv libayatana-appindicator3-dev keybinder-3.0 libnotify-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer-1.0 libsecret-1-dev zip
 
-      # ========== 修复Android NDK许可 + 依赖 ==========
       - name: Accept Android SDK Licenses & Install NDK
         if: matrix.platform == 'android'
         run: |
@@ -60,7 +58,6 @@ jobs:
           yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses
           $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager "ndk;29.0.13113456"
 
-      # 精准还原你的安卓签名文件
       - name: Restore Android Signing Files
         if: matrix.platform == 'android'
         run: |
@@ -87,7 +84,6 @@ jobs:
         if: matrix.platform == 'android'
         run: flutter build apk --release --split-per-abi
 
-      # Windows 版本解析 & 安装包
       - name: Extract Version Info
         if: matrix.platform == 'windows'
         id: extract_version
@@ -107,7 +103,6 @@ jobs:
           path: setup.iss
           options: "/DAppVersion=${{ steps.extract_version.outputs.app_version }} /DBuildNumber=${{ steps.extract_version.outputs.build_number }}"
 
-      # Linux AppImage 打包
       - name: Build Linux AppImage
         if: matrix.platform == 'linux'
         run: |
@@ -120,20 +115,22 @@ jobs:
           chmod +x Solian.AppDir/AppRun
           ./buildtools/appimagetool-x86_64.AppImage Solian.AppDir
 
-      # 全部产物上传
+      - name: Compress Windows Portable
+        if: matrix.platform == 'windows'
+        run: |
+          Compress-Archive -Path "build/windows/x64/runner/Release/*" -DestinationPath "windows-portable.zip"
+
+      - name: Compress Linux Bundle
+        if: matrix.platform == 'linux'
+        run: |
+          zip -r linux-bundle.zip build/linux/x64/release/bundle/
+
       - name: Upload Web Build
         if: matrix.platform == 'web'
         uses: actions/upload-artifact@v4
         with:
           name: build-output-web
           path: build/web
-
-      - name: Upload Windows Build
-        if: matrix.platform == 'windows'
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-output-windows
-          path: build/windows/x64/runner/Release
 
       - name: Upload Windows Installer
         if: matrix.platform == 'windows'
@@ -142,12 +139,12 @@ jobs:
           name: build-output-windows-installer
           path: Installer/windows-x86_64-setup.exe
 
-      - name: Upload Linux Bundle
-        if: matrix.platform == 'linux'
+      - name: Upload Windows Portable Zip
+        if: matrix.platform == 'windows'
         uses: actions/upload-artifact@v4
         with:
-          name: build-output-linux
-          path: build/linux/x64/release/bundle
+          name: windows-portable-zip
+          path: windows-portable.zip
 
       - name: Upload Linux AppImage
         if: matrix.platform == 'linux'
@@ -156,9 +153,47 @@ jobs:
           name: build-output-linux-appimage
           path: "./*.AppImage*"
 
+      - name: Upload Linux Bundle Zip
+        if: matrix.platform == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-bundle-zip
+          path: linux-bundle.zip
+
       - name: Upload Android Signed APK
         if: matrix.platform == 'android'
         uses: actions/upload-artifact@v4
         with:
           name: build-output-android-signed
           path: build/app/outputs/flutter-apk/
+
+      - name: Check R2 Connection
+        if: always()
+        uses: rygirassu/r2-upload-action@v1
+        with:
+          r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          r2-bucket: ${{ secrets.R2_BUCKET_NAME }}
+          r2-endpoint: ${{ secrets.R2_ENDPOINT_URL }}
+          check-connection-only: true
+
+      - name: Upload to R2
+        if: always()
+        uses: rygirassu/r2-upload-action@v1
+        with:
+          r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          r2-bucket: ${{ secrets.R2_BUCKET_NAME }}
+          r2-endpoint: ${{ secrets.R2_ENDPOINT_URL }}
+          target-dir: solian
+          overwrite: true
+          strip-path: true
+          files: ${{ 
+            matrix.platform == 'windows' 
+              ? 'Installer/windows-x86_64-setup.exe,windows-portable.zip' 
+            : matrix.platform == 'linux' 
+              ? 'Solian.AppImage,linux-bundle.zip' 
+            : matrix.platform == 'android' 
+              ? 'build/app/outputs/flutter-apk/app-arm64-v8a-release.apk,build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk,build/app/outputs/flutter-apk/app-x86_64-release.apk'
+            : ''
+          }}
