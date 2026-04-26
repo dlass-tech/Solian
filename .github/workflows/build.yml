@@ -1,5 +1,4 @@
 name: Build Release
-
 on:
   push:
     tags:
@@ -49,7 +48,7 @@ jobs:
         if: matrix.platform == 'linux'
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y ninja-build libgtk-3-dev libmpv-dev mpv libayatana-appindicator3-dev keybinder-3.0 libnotify-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer-1.0 libsecret-1-dev zip
+          sudo apt-get install -y ninja-build libgtk-3-dev libmpv-dev mpv libayatana-appindicator3-dev keybinder-3.0 libnotify-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer-1.0 libsecret-1-dev zip curl
 
       - name: Accept Android SDK Licenses & Install NDK
         if: matrix.platform == 'android'
@@ -87,6 +86,7 @@ jobs:
       - name: Extract Version Info
         if: matrix.platform == 'windows'
         id: extract_version
+        shell: powershell
         run: |
           $pubspec = Get-Content pubspec.yaml -Raw
           if ($pubspec -match 'version:\s*(\d+\.\d+\.\d+)\+(\d+)') {
@@ -117,68 +117,64 @@ jobs:
 
       - name: Compress Windows Portable
         if: matrix.platform == 'windows'
-        run: |
-          Compress-Archive -Path "build/windows/x64/runner/Release/*" -DestinationPath "windows-portable.zip"
+        shell: powershell
+        run: Compress-Archive -Path "build/windows/x64/runner/Release/*" -DestinationPath "windows-portable.zip" -Force
 
       - name: Compress Linux Bundle
         if: matrix.platform == 'linux'
-        run: |
-          zip -r linux-bundle.zip build/linux/x64/release/bundle/
+        run: zip -r linux-bundle.zip build/linux/x64/release/bundle/
 
-      - name: Upload Web Build
+      - name: Upload Web Build Artifact
         if: matrix.platform == 'web'
         uses: actions/upload-artifact@v4
         with:
           name: build-output-web
           path: build/web
 
-      - name: Upload Windows Installer
+      - name: Upload Windows Installer Artifact
         if: matrix.platform == 'windows'
         uses: actions/upload-artifact@v4
         with:
           name: build-output-windows-installer
           path: Installer/windows-x86_64-setup.exe
 
-      - name: Upload Windows Portable Zip
+      - name: Upload Windows Portable Zip Artifact
         if: matrix.platform == 'windows'
         uses: actions/upload-artifact@v4
         with:
           name: windows-portable-zip
           path: windows-portable.zip
 
-      - name: Upload Linux AppImage
+      - name: Upload Linux AppImage Artifact
         if: matrix.platform == 'linux'
         uses: actions/upload-artifact@v4
         with:
           name: build-output-linux-appimage
-          path: "./*.AppImage*"
+          path: ./*.AppImage*
 
-      - name: Upload Linux Bundle Zip
+      - name: Upload Linux Bundle Zip Artifact
         if: matrix.platform == 'linux'
         uses: actions/upload-artifact@v4
         with:
           name: linux-bundle-zip
           path: linux-bundle.zip
 
-      - name: Upload Android Signed APK
+      - name: Upload Android Signed APK Artifact
         if: matrix.platform == 'android'
         uses: actions/upload-artifact@v4
         with:
           name: build-output-android-signed
           path: build/app/outputs/flutter-apk/
 
-      - name: Check R2 Connection
-        if: always()
-        uses: rygirassu/r2-upload-action@v1
-        with:
-          r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
-          r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          r2-bucket: ${{ secrets.R2_BUCKET_NAME }}
-          r2-endpoint: ${{ secrets.R2_ENDPOINT_URL }}
-          check-connection-only: true
+      - name: Pre Check R2 Connection
+        if: matrix.platform != 'web'
+        continue-on-error: true
+        run: |
+          curl --connect-timeout 10 ${{ secrets.R2_ENDPOINT_URL }} -I
 
-      - name: Upload to R2
-        if: always()
+      - name: Upload Release Files To R2
+        if: matrix.platform != 'web'
+        continue-on-error: true
         uses: rygirassu/r2-upload-action@v1
         with:
           r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
