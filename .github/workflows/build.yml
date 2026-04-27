@@ -1,10 +1,12 @@
 name: Build Release
-
 on:
   push:
     tags:
       - "*"
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -32,6 +34,12 @@ jobs:
       - name: Clone repository
         uses: actions/checkout@v4
 
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -40,20 +48,17 @@ jobs:
           cache: true
 
       - name: Install Linux Dependencies
-        if: matrix.platform == 'linux'
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y ninja-build libgtk-3-dev libmpv-dev mpv libayatana-appindicator3-dev keybinder-3.0 libnotify-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer-1.0 libsecret-1-dev
+          sudo apt-get install -y ninja-build libgtk-3-dev libmpv-dev mpv libayatana-appindicator3-dev keybinder-3.0 libnotify-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer-1.0 libsecret-1-dev zip curl unzip
 
-      # ========== 修复Android NDK许可 + 依赖 ==========
-      - name: Accept Android SDK Licenses & Install NDK
+      - name: Accept Android SDK Licenses & NDK
         if: matrix.platform == 'android'
         run: |
           export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
           yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses
           $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager "ndk;29.0.13113456"
 
-      # 精准还原你的安卓签名文件
       - name: Restore Android Signing Files
         if: matrix.platform == 'android'
         run: |
@@ -76,21 +81,19 @@ jobs:
         if: matrix.platform == 'linux'
         run: flutter build linux --no-tree-shake-icons --release
 
-      - name: Build Android Signed Release
+      - name: Build Android Release
         if: matrix.platform == 'android'
         run: flutter build apk --release --split-per-abi
 
-      # Windows 版本解析 & 安装包
-      - name: Extract Version Info
+      - name: Extract Version
         if: matrix.platform == 'windows'
         id: extract_version
+        shell: powershell
         run: |
-          $pubspec = Get-Content pubspec.yaml -Raw
-          if ($pubspec -match 'version:\s*(\d+\.\d+\.\d+)\+(\d+)') {
-            $appVersion = $matches[1]
-            $buildNumber = $matches[2]
-            Write-Host "app_version=$appVersion" >> $env:GITHUB_OUTPUT
-            Write-Host "build_number=$buildNumber" >> $env:GITHUB_OUTPUT
+          $pub = Get-Content pubspec.yaml -Raw
+          if($pub -match 'version:\s*(\d+\.\d+\.\d+)\+(\d+)'){
+            Write-Host "app_version=$($matches[1])" >> $env:GITHUB_OUTPUT
+            Write-Host "build_number=$($matches[2])" >> $env:GITHUB_OUTPUT
           }
 
       - name: Build Windows Installer
@@ -100,58 +103,140 @@ jobs:
           path: setup.iss
           options: "/DAppVersion=${{ steps.extract_version.outputs.app_version }} /DBuildNumber=${{ steps.extract_version.outputs.build_number }}"
 
-      # Linux AppImage 打包
       - name: Build Linux AppImage
         if: matrix.platform == 'linux'
         run: |
-          rm -rf Solian.AppDir || true
-          mkdir -p Solian.AppDir
-          cp -r build/linux/x64/release/bundle/* Solian.AppDir
-          [ -d buildtools/appimage_config ] && cp -r buildtools/appimage_config/* Solian.AppDir
-          [ -f assets/icons/icon-padded.png ] && cp assets/icons/icon-padded.png Solian.AppDir
+          rm -rf Meike.AppDir || true
+          mkdir -p Meike.AppDir
+          cp -r build/linux/x64/release/bundle/* Meike.AppDir
+          [ -d buildtools/appimage_config ] && cp -r buildtools/appimage_config/* Meike.AppDir
+          [ -f assets/icons/icon-padded.png ] && cp assets/icons/icon-padded.png Meike.AppDir
           chmod +x buildtools/appimagetool-x86_64.AppImage
-          chmod +x Solian.AppDir/AppRun
-          ./buildtools/appimagetool-x86_64.AppImage Solian.AppDir
+          chmod +x Meike.AppDir/AppRun
+          ./buildtools/appimagetool-x86_64.AppImage Meike.AppDir Meike.AppImage
 
-      # 全部产物上传
-      - name: Upload Web Build
+      - name: Package Web Zip
+        if: matrix.platform == 'web'
+        run: zip -r meike-web.zip build/web/
+
+      - name: Package Windows Portable
+        if: matrix.platform == 'windows'
+        shell: powershell
+        run: Compress-Archive -Path "build/windows/x64/runner/Release/*" -DestinationPath "meike-windows-portable.zip" -Force
+
+      - name: Package Linux Bundle
+        if: matrix.platform == 'linux'
+        run: zip -r meike-linux-bundle.zip build/linux/x64/release/bundle/
+
+      - name: Upload GH Artifact Web
         if: matrix.platform == 'web'
         uses: actions/upload-artifact@v4
         with:
-          name: build-output-web
-          path: build/web
+          name: meike-web
+          path: meike-web.zip
 
-      - name: Upload Windows Build
+      - name: Upload GH Artifact Windows
         if: matrix.platform == 'windows'
         uses: actions/upload-artifact@v4
         with:
-          name: build-output-windows
-          path: build/windows/x64/runner/Release
+          name: meike-windows
+          path: |
+            Installer/meike-windows-x64-setup.exe
+            meike-windows-portable.zip
 
-      - name: Upload Windows Installer
-        if: matrix.platform == 'windows'
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-output-windows-installer
-          path: Installer/windows-x86_64-setup.exe
-
-      - name: Upload Linux Bundle
+      - name: Upload GH Artifact Linux
         if: matrix.platform == 'linux'
         uses: actions/upload-artifact@v4
         with:
-          name: build-output-linux
-          path: build/linux/x64/release/bundle
+          name: meike-linux
+          path: |
+            Meike.AppImage
+            meike-linux-bundle.zip
 
-      - name: Upload Linux AppImage
-        if: matrix.platform == 'linux'
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-output-linux-appimage
-          path: "./*.AppImage*"
-
-      - name: Upload Android Signed APK
+      - name: Upload GH Artifact Android
         if: matrix.platform == 'android'
         uses: actions/upload-artifact@v4
         with:
-          name: build-output-android-signed
+          name: meike-android
           path: build/app/outputs/flutter-apk/
+
+      - name: Upload To GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: always()
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: 每刻 ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          files: |
+            meike-web.zip
+            Installer/meike-windows-x64-setup.exe
+            meike-windows-portable.zip
+            Meike.AppImage
+            meike-linux-bundle.zip
+            build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+            build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+            build/app/outputs/flutter-apk/app-x86_64-release.apk
+
+      - name: Install AWS CLI Linux
+        if: matrix.platform != 'windows'
+        run: |
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip -q awscliv2.zip
+          sudo ./aws/install --update
+
+      - name: Install AWS CLI Windows
+        if: matrix.platform == 'windows'
+        shell: powershell
+        run: choco install awscli -y
+
+      - name: Config R2 Credential
+        if: always()
+        continue-on-error: true
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
+          aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
+          aws configure set region $AWS_DEFAULT_REGION
+
+      - name: R2 Upload Web
+        if: matrix.platform == 'web'
+        continue-on-error: true
+        env:
+          R2_BUCKET: ${{ secrets.R2_BUCKET_NAME }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT_URL }}
+        run: aws s3 cp meike-web.zip s3://$R2_BUCKET/solian/meike-web.zip --endpoint-url $R2_ENDPOINT
+
+      - name: R2 Upload Windows
+        if: matrix.platform == 'windows'
+        continue-on-error: true
+        env:
+          R2_BUCKET: ${{ secrets.R2_BUCKET_NAME }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT_URL }}
+        run: |
+          aws s3 cp Installer/meike-windows-x64-setup.exe s3://$R2_BUCKET/solian/meike-windows-x64-setup.exe --endpoint-url $R2_ENDPOINT
+          aws s3 cp meike-windows-portable.zip s3://$R2_BUCKET/solian/meike-windows-portable.zip --endpoint-url $R2_ENDPOINT
+
+      - name: R2 Upload Linux
+        if: matrix.platform == 'linux'
+        continue-on-error: true
+        env:
+          R2_BUCKET: ${{ secrets.R2_BUCKET_NAME }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT_URL }}
+        run: |
+          [ -f "Meike.AppImage" ] && aws s3 cp Meike.AppImage s3://$R2_BUCKET/solian/Meike.AppImage --endpoint-url $R2_ENDPOINT
+          [ -f "meike-linux-bundle.zip" ] && aws s3 cp meike-linux-bundle.zip s3://$R2_BUCKET/solian/meike-linux-bundle.zip --endpoint-url $R2_ENDPOINT
+
+      - name: R2 Upload Android
+        if: matrix.platform == 'android'
+        continue-on-error: true
+        env:
+          R2_BUCKET: ${{ secrets.R2_BUCKET_NAME }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT_URL }}
+        run: |
+          aws s3 cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk s3://$R2_BUCKET/solian/meike-arm64-v8a.apk --endpoint-url $R2_ENDPOINT
+          aws s3 cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk s3://$R2_BUCKET/solian/meike-armeabi-v7a.apk --endpoint-url $R2_ENDPOINT
+          aws s3 cp build/app/outputs/flutter-apk/app-x86_64-release.apk s3://$R2_BUCKET/solian/meike-x86_64.apk --endpoint-url $R2_ENDPOINT
