@@ -20,7 +20,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions { jvmTarget = JavaVersion.VERSION_17
+    kotlinOptions { jvmTarget = JavaVersion.VERSION_17 }
 
     // 读取签名配置
     val keyProps = Properties()
