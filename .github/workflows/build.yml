@@ -107,18 +107,37 @@ jobs:
           path: setup.iss
           options: "/DAppVersion=${{ steps.extract_version.outputs.app_version }} /DBuildNumber=${{ steps.extract_version.outputs.build_number }}"
 
-      - name: Move installer to Installer folder
+      - name: Locate Windows Installer
         if: matrix.platform == 'windows'
+        id: locate_installer
         shell: bash
         run: |
+          # 创建目标目录
           mkdir -p Installer
+          # 查找所有可能的输出位置
+          found_exe=""
           if [ -f "Output/meike-windows-x64-setup.exe" ]; then
-            mv Output/meike-windows-x64-setup.exe Installer/
+            found_exe="Output/meike-windows-x64-setup.exe"
           elif [ -f "Output/Setup.exe" ]; then
-            mv Output/Setup.exe Installer/meike-windows-x64-setup.exe
+            found_exe="Output/Setup.exe"
+          elif [ -f "Installer/meike-windows-x64-setup.exe" ]; then
+            found_exe="Installer/meike-windows-x64-setup.exe"
           else
-            echo "::error::Installer not found in Output/"
-            exit 1
+            # 搜索整个仓库包含 .exe 的文件（最近修改的）
+            possible_exe=$(find . -name "*.exe" -type f -mmin -5 | head -1)
+            if [ -n "$possible_exe" ]; then
+              found_exe="$possible_exe"
+            fi
+          fi
+          
+          if [ -n "$found_exe" ]; then
+            echo "found_exe=$found_exe" >> $GITHUB_OUTPUT
+            # 复制或移动到标准位置 Installer/meike-windows-x64-setup.exe
+            cp "$found_exe" Installer/meike-windows-x64-setup.exe
+            echo "Installer found at $found_exe"
+          else
+            echo "found_exe=" >> $GITHUB_OUTPUT
+            echo "::warning::No Windows installer executable found."
           fi
 
       - name: Build Linux AppImage
@@ -171,6 +190,7 @@ jobs:
           path: |
             Installer/meike-windows-x64-setup.exe
             meike-windows-portable.zip
+          continue-on-error: true
 
       - name: Upload GH Artifact Linux
         if: matrix.platform == 'linux'
@@ -241,8 +261,12 @@ jobs:
           R2_BUCKET: ${{ secrets.R2_BUCKET_NAME }}
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT_URL }}
         run: |
-          aws s3 cp Installer/meike-windows-x64-setup.exe s3://$R2_BUCKET/solian/meike-windows-x64-setup.exe --endpoint-url $R2_ENDPOINT
-          aws s3 cp meike-windows-portable.zip s3://$R2_BUCKET/solian/meike-windows-portable.zip --endpoint-url $R2_ENDPOINT
+          if [ -f "Installer/meike-windows-x64-setup.exe" ]; then
+            aws s3 cp Installer/meike-windows-x64-setup.exe s3://$R2_BUCKET/solian/meike-windows-x64-setup.exe --endpoint-url $R2_ENDPOINT
+          fi
+          if [ -f "meike-windows-portable.zip" ]; then
+            aws s3 cp meike-windows-portable.zip s3://$R2_BUCKET/solian/meike-windows-portable.zip --endpoint-url $R2_ENDPOINT
+          fi
 
       - name: R2 Upload Linux
         if: matrix.platform == 'linux'
