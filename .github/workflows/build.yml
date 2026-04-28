@@ -41,7 +41,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           java-version: '17'
-          distribution: 'temurin'
+          distribution: temurin
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -112,9 +112,7 @@ jobs:
         id: locate_installer
         shell: bash
         run: |
-          # 创建目标目录
           mkdir -p Installer
-          # 查找所有可能的输出位置
           found_exe=""
           if [ -f "Output/meike-windows-x64-setup.exe" ]; then
             found_exe="Output/meike-windows-x64-setup.exe"
@@ -123,18 +121,14 @@ jobs:
           elif [ -f "Installer/meike-windows-x64-setup.exe" ]; then
             found_exe="Installer/meike-windows-x64-setup.exe"
           else
-            # 搜索整个仓库包含 .exe 的文件（最近修改的）
             possible_exe=$(find . -name "*.exe" -type f -mmin -5 | head -1)
             if [ -n "$possible_exe" ]; then
               found_exe="$possible_exe"
             fi
           fi
-          
           if [ -n "$found_exe" ]; then
             echo "found_exe=$found_exe" >> $GITHUB_OUTPUT
-            # 复制或移动到标准位置 Installer/meike-windows-x64-setup.exe
             cp "$found_exe" Installer/meike-windows-x64-setup.exe
-            echo "Installer found at $found_exe"
           else
             echo "found_exe=" >> $GITHUB_OUTPUT
             echo "::warning::No Windows installer executable found."
@@ -166,7 +160,7 @@ jobs:
         run: zip -r meike-linux-bundle.zip build/linux/x64/release/bundle/
 
       - name: Deploy Web to GitHub Pages
-        if: matrix.platform == 'web' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        if: matrix.platform == 'web'
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
