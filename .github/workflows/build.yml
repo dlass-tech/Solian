@@ -107,6 +107,20 @@ jobs:
           path: setup.iss
           options: "/DAppVersion=${{ steps.extract_version.outputs.app_version }} /DBuildNumber=${{ steps.extract_version.outputs.build_number }}"
 
+      - name: Move installer to Installer folder
+        if: matrix.platform == 'windows'
+        shell: bash
+        run: |
+          mkdir -p Installer
+          if [ -f "Output/meike-windows-x64-setup.exe" ]; then
+            mv Output/meike-windows-x64-setup.exe Installer/
+          elif [ -f "Output/Setup.exe" ]; then
+            mv Output/Setup.exe Installer/meike-windows-x64-setup.exe
+          else
+            echo "::error::Installer not found in Output/"
+            exit 1
+          fi
+
       - name: Build Linux AppImage
         if: matrix.platform == 'linux'
         run: |
@@ -132,6 +146,48 @@ jobs:
         if: matrix.platform == 'linux'
         run: zip -r meike-linux-bundle.zip build/linux/x64/release/bundle/
 
+      - name: Deploy Web to GitHub Pages
+        if: matrix.platform == 'web' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./build/web
+          publish_branch: gh-pages
+          force_orphan: true
+          commit_message: "Deploy web ${{ github.ref_name }}"
+
+      - name: Upload GH Artifact Web
+        if: matrix.platform == 'web'
+        uses: actions/upload-artifact@v4
+        with:
+          name: meike-web
+          path: meike-web.zip
+
+      - name: Upload GH Artifact Windows
+        if: matrix.platform == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: meike-windows
+          path: |
+            Installer/meike-windows-x64-setup.exe
+            meike-windows-portable.zip
+
+      - name: Upload GH Artifact Linux
+        if: matrix.platform == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: meike-linux
+          path: |
+            Meike.AppImage
+            meike-linux-bundle.zip
+
+      - name: Upload GH Artifact Android
+        if: matrix.platform == 'android'
+        uses: actions/upload-artifact@v4
+        with:
+          name: meike-android
+          path: build/app/outputs/flutter-apk/
+
       - name: Upload To GitHub Release
         uses: softprops/action-gh-release@v2
         if: always()
@@ -140,6 +196,7 @@ jobs:
           release_name: 每刻 ${{ github.ref_name }}
           draft: false
           prerelease: false
+          fail_on_unmatched_files: false
           files: |
             meike-web.zip
             Installer/meike-windows-x64-setup.exe
@@ -213,42 +270,3 @@ jobs:
           aws s3 cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk s3://$R2_BUCKET/solian/meike-arm64-v8a.apk --endpoint-url $R2_ENDPOINT
           aws s3 cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk s3://$R2_BUCKET/solian/meike-armeabi-v7a.apk --endpoint-url $R2_ENDPOINT
           aws s3 cp build/app/outputs/flutter-apk/app-x86_64-release.apk s3://$R2_BUCKET/solian/meike-x86_64.apk --endpoint-url $R2_ENDPOINT
-
-  deploy-web:
-    name: Deploy Web to GitHub Pages
-    runs-on: ubuntu-latest
-    needs: build
-    if: github.repository_owner == '你的GitHub用户名' && success()   # 可选：限制条件
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-
-    steps:
-      - name: Download Web Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: meike-web
-          path: web-artifact
-
-      - name: Extract Web Zip
-        run: |
-          cd web-artifact
-          unzip -q meike-web.zip
-
-          mv build/web/* ./
-          rm -rf build meike-web.zip
-
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-
-      - name: Upload Pages Artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: web-artifact
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
