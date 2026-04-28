@@ -20,9 +20,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions { jvmTarget = JavaVersion.VERSION_17 }
+    kotlinOptions {
+        jvmTarget = "17"
+    }
 
-    // 读取签名配置
     val keyProps = Properties()
     val propFile = rootProject.file("key.properties")
     if (propFile.exists()) {
@@ -79,4 +80,3 @@ configurations.all {
 flutter {
     source = "../.."
 }
-
