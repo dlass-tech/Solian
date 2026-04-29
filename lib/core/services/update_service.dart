@@ -17,7 +17,7 @@ import 'package:styled_widget/styled_widget.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:island/shared/widgets/layouts/sheet_scaffold.dart';
 
-/// ==================== 数据模型 ====================
+/// ==================== 更新数据模型 ====================
 class CustomUpdateInfo {
   final String versionTag;
   final String title;
@@ -76,7 +76,7 @@ class CustomUpdateInfo {
   }
 }
 
-/// 版本比较
+/// 版本比较工具
 class _ParsedVersion implements Comparable<_ParsedVersion> {
   final int major, minor, patch, build;
   const _ParsedVersion(this.major, this.minor, this.patch, this.build);
@@ -119,19 +119,14 @@ class UpdateService {
 
   CustomUpdateInfo? _latestData;
 
-  Future<CustomUpdateInfo?> fetchUpdateConfig() async {
-    try {
-      final resp = await _dio.get(updateApiUrl);
-      if (resp.statusCode != 200) return null;
-      return CustomUpdateInfo.fromJson(resp.data);
-    } catch (e) {
-      Logger.root.severe('[Update] 获取更新配置失败: $e');
-      return null;
-    }
-  }
+  /// ====================== 对外主要接口 ======================
 
+  /// 检查更新（Web端直接跳过）
   Future<void> checkForUpdates(BuildContext context) async {
     if (!kEnableBuiltInUpdate) return;
+    if (kIsWeb) return;                    // ← 关键：Web端完全不检查更新
+
+    Logger.root.info('[更新] 正在检测新版本...');
 
     try {
       final data = await fetchUpdateConfig();
@@ -144,7 +139,9 @@ class UpdateService {
       final local = _ParsedVersion.tryParse(localVer);
       final latest = _ParsedVersion.tryParse(data.versionTag);
 
-      if (local == null || latest == null || latest.compareTo(local) <= 0) {
+      if (local == null || latest == null) return;
+
+      if (latest.compareTo(local) <= 0) {
         Logger.root.info('[更新] 当前已是最新版本');
         return;
       }
@@ -157,8 +154,9 @@ class UpdateService {
     }
   }
 
-  // 兼容旧调用方式
+  /// 显示更新弹窗（兼容旧调用）
   Future<void> showUpdateSheet(BuildContext context, [dynamic release]) async {
+    if (kIsWeb) return;                    // Web端也不显示更新弹窗
     if (_latestData == null) {
       final data = await fetchUpdateConfig();
       if (data != null) _latestData = data;
@@ -166,6 +164,29 @@ class UpdateService {
     if (context.mounted) {
       await _showUpdateBottomSheet(context);
     }
+  }
+
+  /// 获取更新配置
+  Future<CustomUpdateInfo?> fetchUpdateConfig() async {
+    try {
+      final resp = await _dio.get(updateApiUrl);
+      if (resp.statusCode != 200) return null;
+      return CustomUpdateInfo.fromJson(resp.data);
+    } catch (e) {
+      Logger.root.severe('[Update] 获取更新配置失败: $e');
+      return null;
+    }
+  }
+
+  /// Windows 一键安装
+  Future<void> downloadAndInstallWindows(BuildContext context, String url) async {
+    if (kIsWeb || !Platform.isWindows) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _WindowsUpdateDialog(installUrl: url),
+    );
   }
 
   Future<void> _showUpdateBottomSheet(BuildContext context) async {
@@ -179,21 +200,9 @@ class UpdateService {
       builder: (ctx) => _UpdateSheet(updateData: data),
     );
   }
-
-  // Windows 一键更新
-  Future<void> downloadAndInstallWindows(BuildContext context, String url) async {
-    if (kIsWeb) return;
-    if (!Platform.isWindows) return;
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => _WindowsUpdateDialog(installUrl: url),
-    );
-  }
 }
 
-// ====================== Windows 更新弹窗 ======================
+// ====================== Windows 更新对话框 ======================
 class _WindowsUpdateDialog extends StatefulWidget {
   final String installUrl;
   const _WindowsUpdateDialog({super.key, required this.installUrl});
@@ -211,8 +220,6 @@ class _WindowsUpdateDialogState extends State<_WindowsUpdateDialog> {
     super.initState();
     if (!kIsWeb && Platform.isWindows) {
       _startInstallProcess();
-    } else {
-      Navigator.pop(context);
     }
   }
 
@@ -222,10 +229,13 @@ class _WindowsUpdateDialogState extends State<_WindowsUpdateDialog> {
       final tempDir = await getTemporaryDirectory();
       final savePath = path.join(tempDir.path, 'SolianSetup.exe');
 
-      await Dio().download(widget.installUrl, savePath,
-          onReceiveProgress: (received, total) {
-        if (total != 0) progress.value = received / total;
-      });
+      await Dio().download(
+        widget.installUrl,
+        savePath,
+        onReceiveProgress: (received, total) {
+          if (total != 0) progress.value = received / total;
+        },
+      );
 
       status.value = '正在启动安装程序...';
       await Process.start(savePath, [], workingDirectory: tempDir.path);
@@ -233,6 +243,7 @@ class _WindowsUpdateDialogState extends State<_WindowsUpdateDialog> {
       if (mounted) Navigator.pop(context);
     } catch (e) {
       status.value = '更新失败：$e';
+      Logger.root.severe('[Windows更新失败] $e');
     }
   }
 
@@ -258,7 +269,7 @@ class _WindowsUpdateDialogState extends State<_WindowsUpdateDialog> {
   }
 }
 
-// ====================== 更新弹窗界面 ======================
+// ====================== 更新内容弹窗 ======================
 class _UpdateSheet extends StatelessWidget {
   final CustomUpdateInfo updateData;
 
@@ -273,7 +284,10 @@ class _UpdateSheet extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(updateData.title, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+            Text(
+              updateData.title,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+            ),
             Text(updateData.versionTag),
             if (updateData.forceUpdate)
               const Text('⚠️ 强制更新，旧版本无法继续使用', style: TextStyle(color: Colors.red)),
@@ -287,7 +301,12 @@ class _UpdateSheet extends StatelessWidget {
                 if (!kIsWeb && Platform.isAndroid && updateData.androidArm64.isNotEmpty)
                   FilledButton.icon(
                     onPressed: () {
-                      final model = UpdateModel(updateData.androidArm64, "solian.apk", "launcher_icon", "");
+                      final model = UpdateModel(
+                        updateData.androidArm64,
+                        "solian.apk",
+                        "launcher_icon",
+                        '',
+                      );
                       AzhonAppUpdate.update(model);
                     },
                     icon: const Icon(Symbols.system_update),
