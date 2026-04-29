@@ -95,7 +95,7 @@ class _ParsedVersion implements Comparable<_ParsedVersion> {
       return build % 2000;
     } else if (build >= 1000) {
       // Likely x86/x86_64 with +1000 offset
-      return build % 4000;
+      return build % 1000;
     }
     // No offset, return as-is
     return build;
@@ -267,10 +267,10 @@ class UpdateService {
   }
 
   String _getWindowsUpdateUrl() {
-    return 'https://fs.dy.ci/d/official/solian/meike-windows-x64-setup.exe';
+    return 'https://fs.dy.ci/d/official/solian/meike-windows-x64-setup.zip';
   }
 
-  /// Performs automatic Windows update: download exe & install directly
+  /// Performs automatic Windows update: download, extract, and install
   Future<void> performAutomaticWindowsUpdate(
     BuildContext context,
     String url,
@@ -368,8 +368,8 @@ class _WindowsUpdateDialogState extends State<_WindowsUpdateDialog> {
 
   Future<void> _startUpdate() async {
     try {
-      // Step 1: 直接下载EXE安装包
-      final exePath = await _downloadWindowsInstaller(
+      // Step 1: Download
+      final zipPath = await _downloadWindowsInstaller(
         widget.updateUrl,
         onProgress: (received, total) {
           if (total == -1) {
@@ -379,16 +379,25 @@ class _WindowsUpdateDialogState extends State<_WindowsUpdateDialog> {
           }
         },
       );
-      if (exePath == null) {
+      if (zipPath == null) {
         _showError('Failed to download installer');
         return;
       }
 
-      // Step 2: 直接运行EXE，无需解压
-      messageNotifier.value = 'Running installer...';
-      progressNotifier.value = null;
+      // Step 2: Extract
+      messageNotifier.value = 'Extracting installer...';
+      progressNotifier.value = null; // Indeterminate for extraction
 
-      final success = await _runWindowsInstaller(exePath);
+      final extractDir = await _extractWindowsInstaller(zipPath);
+      if (extractDir == null) {
+        _showError('Failed to extract installer');
+        return;
+      }
+
+      // Step 3: Run installer
+      messageNotifier.value = 'Running installer...';
+
+      final success = await _runWindowsInstaller(extractDir);
       if (!mounted) return;
 
       if (success) {
@@ -403,9 +412,10 @@ class _WindowsUpdateDialogState extends State<_WindowsUpdateDialog> {
         _showError('Failed to run installer');
       }
 
-      // 清理临时EXE文件
+      // Cleanup
       try {
-        await File(exePath).delete();
+        await File(zipPath).delete();
+        await Directory(extractDir).delete(recursive: true);
       } catch (e) {
         Logger.root.severe('[Update] Error cleaning up temporary files: $e');
       }
@@ -458,7 +468,7 @@ class _WindowsUpdateDialogState extends State<_WindowsUpdateDialog> {
     );
   }
 
-  /// 直接下载Windows EXE安装程序
+  /// Downloads the Windows installer ZIP file
   Future<String?> _downloadWindowsInstaller(
     String url, {
     void Function(int received, int total)? onProgress,
@@ -470,12 +480,12 @@ class _WindowsUpdateDialogState extends State<_WindowsUpdateDialog> {
 
       final tempDir = await getTemporaryDirectory();
       final fileName =
-          'solian-installer-${DateTime.now().millisecondsSinceEpoch}.exe';
+          'solian-installer-${DateTime.now().millisecondsSinceEpoch}.zip';
       final filePath = path.join(tempDir.path, fileName);
 
       final response = await Dio().download(
         url,
-        exePath,
+        filePath,
         onReceiveProgress: (received, total) {
           if (total != -1) {
             Logger.root.info(
@@ -503,13 +513,65 @@ class _WindowsUpdateDialogState extends State<_WindowsUpdateDialog> {
     }
   }
 
-  /// 直接运行下载好的EXE安装程序
-  Future<bool> _runWindowsInstaller(String exePath) async {
+  /// Extracts the ZIP file to a temporary directory
+  Future<String?> _extractWindowsInstaller(String zipPath) async {
     try {
-      Logger.root.info('[Update] Running Windows installer: $exePath');
+      Logger.root.info('[Update] Extracting Windows installer from: $zipPath');
+
+      final tempDir = await getTemporaryDirectory();
+      final extractDir = path.join(
+        tempDir.path,
+        'solian-installer-${DateTime.now().millisecondsSinceEpoch}',
+      );
+
+      final zipFile = File(zipPath);
+      final bytes = await zipFile.readAsBytes();
+      final archive = ZipDecoder().decodeBytes(bytes);
+
+      for (final file in archive) {
+        final filename = file.name;
+        if (file.isFile) {
+          final data = file.content as List<int>;
+          final filePath = path.join(extractDir, filename);
+          await Directory(path.dirname(filePath)).create(recursive: true);
+          await File(filePath).writeAsBytes(data);
+        } else {
+          final dirPath = path.join(extractDir, filename);
+          await Directory(dirPath).create(recursive: true);
+        }
+      }
+
+      Logger.root.info(
+        '[Update] Windows installer extracted successfully to: $extractDir',
+      );
+      return extractDir;
+    } catch (e) {
+      Logger.root.severe('[Update] Error extracting Windows installer: $e');
+      return null;
+    }
+  }
+
+  /// Runs the setup.exe file
+  Future<bool> _runWindowsInstaller(String extractDir) async {
+    try {
+      Logger.root.info('[Update] Running Windows installer from: $extractDir');
+
+      final dir = Directory(extractDir);
+      final exeFiles = dir
+          .listSync()
+          .where((f) => f is File && f.path.endsWith('.exe'))
+          .toList();
+
+      if (exeFiles.isEmpty) {
+        Logger.root.info('[Update] No .exe file found in extracted directory');
+        return false;
+      }
+
+      final setupExePath = exeFiles.first.path;
+      Logger.root.info('[Update] Found installer executable: $setupExePath');
 
       final shell = Shell();
-      final results = await shell.run(exePath);
+      final results = await shell.run(setupExePath);
       final result = results.first;
 
       if (result.exitCode == 0) {
@@ -644,6 +706,7 @@ class _UpdateSheetState extends State<_UpdateSheet> {
                       Expanded(
                         child: FilledButton.icon(
                           onPressed: () {
+                            // Access the UpdateService instance to call the automatic update method
                             final updateService = UpdateService(
                               useProxy: widget.useProxy,
                             );
