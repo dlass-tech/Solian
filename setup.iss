@@ -3,10 +3,11 @@
 #define BuildNumber "144"
 ; ==================================================
 
-#define FullVersion AppVersion + "." + BuildNumber
+; 修正版本号拼接
+#define FullVersion Add(AppVersion, ".", BuildNumber)
 
 [Setup]
-AppName=Dynamic
+AppName=每刻
 AppVersion={#AppVersion}
 AppPublisher=zhaishis
 AppPublisherURL=https://zhaishis.com

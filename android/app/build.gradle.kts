@@ -43,6 +43,26 @@ android {
         }
     }
 
+    // 读取签名配置
+    val keyProps = Properties()
+    val propFile = rootProject.file("key.properties")
+    if (propFile.exists()) {
+        keyProps.load(FileInputStream(propFile))
+    }
+
+    signingConfigs {
+        create("release") {
+            storeFile = file(keyProps.getProperty("storeFile"))
+            storePassword = keyProps.getProperty("storePassword")
+            keyAlias = keyProps.getProperty("keyAlias")
+            keyPassword = keyProps.getProperty("keyPassword")
+
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
+        }
+    }
+
     defaultConfig {
         applicationId = "com.zhaishis.dyci"
         minSdk = 26
