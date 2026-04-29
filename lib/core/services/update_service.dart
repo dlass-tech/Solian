@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-
 import 'package:archive/archive.dart';
 import 'package:dio/dio.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -39,9 +38,10 @@ class CustomUpdateInfo {
   final String linuxBundleZip;
   final String webPackage;
 
-  final List<UpdateHistoryItem> history;
+  final List history;
 
   CustomUpdateInfo({
+    required this.versionTag,
     required this.versionTag,
     required this.title,
     required this.changelog,
@@ -123,7 +123,7 @@ class GithubReleaseInfo {
   final String body;
   final String htmlUrl;
   final DateTime createdAt;
-  final List<GithubReleaseAsset> assets;
+  final List assets;
 
   const GithubReleaseInfo({
     required this.tagName,
@@ -193,7 +193,7 @@ class UpdateService {
 
   CustomUpdateInfo? _updateData;
 
-  Future<void> checkForUpdates(BuildContext context) async {
+  Future checkForUpdates(BuildContext context) async {
     if (!kEnableBuiltInUpdate) return;
     Logger.root.info('[更新] 开始检测云端版本');
 
@@ -241,7 +241,7 @@ class UpdateService {
     }
   }
 
-  Future<void> showUpdateSheet(BuildContext context, GithubReleaseInfo release) async {
+  Future showUpdateSheet(BuildContext context, GithubReleaseInfo release) async {
     if (!context.mounted || _updateData == null) return;
 
     await showModalBottomSheet(
@@ -257,7 +257,7 @@ class UpdateService {
   }
 
   /// Windows自动下载安装EXE
-  Future<void> downloadAndInstallWindowsExe(BuildContext context, String url) async {
+  Future downloadAndInstallWindowsExe(BuildContext context, String url) async {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -282,8 +282,8 @@ class _WindowsUpdateDialog extends StatefulWidget {
 }
 
 class _WindowsUpdateDialogState extends State<_WindowsUpdateDialog> {
-  final ValueNotifier<double> progress = ValueNotifier(0);
-  final ValueNotifier<String> status = ValueNotifier('正在下载安装包');
+  final ValueNotifier progress = ValueNotifier(0);
+  final ValueNotifier status = ValueNotifier('正在下载安装包');
 
   @override
   void initState() {
@@ -291,7 +291,7 @@ class _WindowsUpdateDialogState extends State<_WindowsUpdateDialog> {
     _startInstall();
   }
 
-  Future<void> _startInstall() async {
+  Future _startInstall() async {
     try {
       final tempDir = await getTemporaryDirectory();
       final savePath = path.join(tempDir.path, 'MeikeSetup.exe');
@@ -319,12 +319,12 @@ class _WindowsUpdateDialogState extends State<_WindowsUpdateDialog> {
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          ValueListenableBuilder<double>(
+          ValueListenableBuilder(
             valueListenable: progress,
             builder: (_, p, __) => LinearProgressIndicator(value: p),
           ),
           const SizedBox(height: 12),
-          ValueListenableBuilder<String>(
+          ValueListenableBuilder(
             valueListenable: status,
             builder: (_, s, __) => Text(s),
           ),
@@ -343,7 +343,7 @@ class _UpdateSheet extends StatefulWidget {
   const _UpdateSheet({required this.release, required this.updateData, required this.forceUpdate});
 
   @override
-  State<_UpdateSheet> createState() => _UpdateSheetState();
+  State<_UpdateSheetState> createState() => _UpdateSheetState();
 }
 
 class _UpdateSheetState extends State<_UpdateSheet> {
@@ -355,7 +355,6 @@ class _UpdateSheetState extends State<_UpdateSheet> {
         padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom + 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          // 【修复1】移除 mainAxisSize: MainAxisSize.min，避免与 Expanded 冲突导致弹窗无法显示
           children: [
             Padding(
               padding: const EdgeInsets.all(16),
@@ -365,7 +364,7 @@ class _UpdateSheetState extends State<_UpdateSheet> {
                   Text(widget.release.name, style: Theme.of(context).textTheme.titleMedium).bold(),
                   Text(widget.release.tagName),
                   if (widget.forceUpdate)
-                    const Text('⚠️ 强制更新，不更新无法继续使用', color: Colors.red),
+                    Text('⚠️ 强制更新，不更新无法继续使用', style: TextStyle(color: Colors.red)),
                 ],
               ),
             ),
@@ -382,50 +381,55 @@ class _UpdateSheetState extends State<_UpdateSheet> {
                 children: [
                   // Windows 安装版
                   if (Platform.isWindows && widget.updateData.windowsSetupExe.isNotEmpty)
-                    FilledButton.icon(
+                    SizedBox(
                       width: double.infinity,
-                      onPressed: () => UpdateService().downloadAndInstallWindowsExe(
-                          context, widget.updateData.windowsSetupExe),
-                      icon: const Icon(Symbols.install_desktop),
-                      label: const Text('一键安装更新'),
+                      child: FilledButton.icon(
+                        onPressed: () => UpdateService().downloadAndInstallWindowsExe(
+                            context, widget.updateData.windowsSetupExe),
+                        icon: const Icon(Symbols.install_desktop),
+                        label: const Text('一键安装更新'),
+                      ),
                     ),
                   const SizedBox(height: 8),
                   // 安卓自动更新
                   if (Platform.isAndroid && widget.updateData.androidArm64.isNotEmpty)
-                    FilledButton.icon(
+                    SizedBox(
                       width: double.infinity,
-                      // 【修复2】添加异常捕获，避免更新失败导致应用崩溃
-                      onPressed: () async {
-                        try {
-                          final model = UpdateModel(
-                            widget.updateData.androidArm64,
-                            'Meike.apk',
-                            'launcher_icon',
-                            '',
-                          );
-                          AzhonAppUpdate.update(model);
-                        } catch (e) {
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('启动更新失败：$e')),
+                      child: FilledButton.icon(
+                        onPressed: () async {
+                          try {
+                            final model = UpdateModel(
+                              widget.updateData.androidArm64,
+                              'Meike.apk',
+                              'launcher_icon',
+                              '',
                             );
+                            AzhonAppUpdate.update(model);
+                          } catch (e) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('启动更新失败：$e')),
+                              );
+                            }
                           }
-                        }
-                      },
-                      icon: const Icon(Symbols.update_app),
-                      label: const Text('安卓一键更新'),
+                        },
+                        icon: const Icon(Symbols.system_update),
+                        label: const Text('安卓一键更新'),
+                      ),
                     ),
                   const SizedBox(height: 8),
                   // 前往网页下载全平台
-                  OutlinedButton.icon(
+                  SizedBox(
                     width: double.infinity,
-                    onPressed: widget.forceUpdate
-                        ? null
-                        : () async {
-                            await launchUrl(Uri.parse(widget.updateData.releaseUrl));
-                          },
-                    icon: const Icon(Icons.open_in_browser),
-                    label: const Text('浏览器下载Linux/便携版'),
+                    widget: OutlinedButton.icon(
+                      onPressed: widget.forceUpdate
+                          ? null
+                          : () async {
+                              await launchUrl(Uri.parse(widget.updateData.releaseUrl));
+                            },
+                      icon: const Icon(Icons.open_in_browser),
+                      label: const Text('浏览器下载Linux/便携版'),
+                    ),
                   ),
                 ],
               ),
