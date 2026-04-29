@@ -15,10 +15,12 @@ AppSupportURL=https://zhaishis.com
 AppUpdatesURL=https://github.com/dlass-tech/Solian/releases
 AppCopyright=Copyright © 2026 zhaishis
 VersionInfoVersion={#FullVersion}
-UninstallDisplayName=Dynamic
-UninstallDisplayIcon={app}\Dynamic
 
-DefaultDirName={commonpf}\Dynamic
+; 卸载显示名和AppName保持一致
+UninstallDisplayName=每刻
+UninstallDisplayIcon={app}\dyci.exe
+
+DefaultDirName={commonpf}\dyci
 UsePreviousAppDir=no
 
 OutputDir=.\Installer
@@ -37,17 +39,17 @@ PrivilegesRequired=admin
 Source: ".\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\Dynamic"; Filename: "{app}\Dynamic.exe";IconFilename: "{app}\Dynamic.exe"
-Name: "{group}\{cm:UninstallProgram,Solian}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\Dynamic"; Filename: "{app}\Dynamic.exe"; Tasks: desktopicon
+Name: "{group}\每刻"; Filename: "{app}\dyci.exe"; IconFilename: "{app}\dyci.exe"
+Name: "{group}\{cm:UninstallProgram,每刻}"; Filename: "{uninstallexe}"
+Name: "{autodesktop}\每刻"; Filename: "{app}\dyci.exe"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Run]
-Filename: "{app}\Dynamic.exe"; Description: "启动每刻社区"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\dyci.exe"; Description: "启动每刻社区"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
-Type: filesandordirs; Name: "{userappdata}\zhaishis\Dynamic"
-Type: files; Name: "{group}\Dynamic.lnk" ;
-Type: files; Name: "{autodesktop}\Dynamic.lnk" ;
+Type: filesandordirs; Name: "{userappdata}\zhaishis\dyci"; Flags: ifexists
+Type: files; Name: "{group}\每刻.lnk"; Flags: ifexists
+Type: files; Name: "{autodesktop}\每刻.lnk"; Flags: ifexists
