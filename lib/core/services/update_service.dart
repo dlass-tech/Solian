@@ -13,6 +13,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:process_run/process_run.dart';
 import 'package:url_launcher/url_launcher.dart';
+
 import 'package:island/shared/widgets/content/markdown_widget.dart';
 import 'package:island/shared/widgets/layouts/sheet_scaffold.dart';
 
@@ -132,8 +133,8 @@ class UpdateService {
   UpdateService({Dio? dio, this.useProxy = false})
       : _dio = dio ??
             Dio(BaseOptions(
-              connectTimeout: const Duration(seconds: 12),
-              receiveTimeout: const Duration(seconds: 20),
+              connectTimeout: Duration(seconds: 12),
+              receiveTimeout: Duration(seconds: 20),
             ));
 
   final Dio _dio;
@@ -169,13 +170,10 @@ class UpdateService {
 
       final local = VersionCompare.parse(localVer);
       final latest = VersionCompare.parse(data.versionTag);
-      final min = VersionCompare.parse(data.minVersionTag);
 
       if (local == null || latest == null) return;
 
-      final needForce = min != null && local.compareTo(min) < 0;
       final hasNew = local.compareTo(latest) < 0;
-
       if (!hasNew) {
         Logger.root.info('[更新] 当前已是最新版本');
         return;
@@ -189,20 +187,25 @@ class UpdateService {
     }
   }
 
-  // 只传1个参数，完美匹配debug_sheet调用
-  Future<void> showUpdateSheet(BuildContext context) async {
+  Future<void> showUpdateSheet(BuildContext context, [GithubRelease? release]) async {
     final data = _latestData;
     if (data == null) return;
 
     await showModalBottomSheet(
-      builder: (ctx) => UpdateSheet(
-        release: Github(title: data.title, tag: data.versionTag, log: data.changelog, url: data.releaseUrl),
-        updateData: data,
-        forceUpdate: data.forceUpdate,
-      ),
       context: context,
       useRootNavigator: true,
       isScrollControlled: true,
+      builder: (ctx) => UpdateSheet(
+        release: release ?? GithubRelease(
+          tagName: data.versionTag,
+          name: data.title,
+          body: data.changelog,
+          htmlUrl: data.releaseUrl,
+          createdAt: DateTime.now(),
+        ),
+        updateData: data,
+        forceUpdate: data.forceUpdate,
+      ),
     );
   }
 
@@ -253,16 +256,14 @@ class _WindowsUpdateDialogState extends State<WindowsUpdateDialog> {
         widget.installUrl,
         savePath,
         onReceiveProgress: (received, total) {
-          if (total != 0) {
-            progress.value = received / total;
-          }
+          if (total != 0) progress.value = received / total;
         },
       );
 
       status.value = '正在启动安装程序';
       await Process.start(savePath, [], workingDirectory: tempDir.path);
 
-      await Future.delayed(const Duration(seconds: 1));
+      await Future.delayed(Duration(seconds: 1));
       if (mounted) Navigator.pop(context);
     } catch (e) {
       status.value = '更新失败：$e';
@@ -277,7 +278,7 @@ class _WindowsUpdateDialogState extends State<WindowsUpdateDialog> {
         mainAxisSize: MainAxisSize.min,
         children: [
           LinearProgressIndicator(value: progress.value),
-          const SizedBox(height: 12),
+          SizedBox(height: 12),
           Text(status.value),
         ],
       ),
@@ -307,17 +308,25 @@ class _UpdateSheetState extends State<UpdateSheet> {
     return SheetScaffold(
       titleText: '发现新版本',
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(widget.release.name, style: Theme.of(context).textTheme.titleMedium!.copyWith(fontWeight: FontWeight.bold)),
+            Text(
+              widget.release.name,
+              style: Theme.of(context).textTheme.titleMedium!.copyWith(
+                fontWeight: FontWeight.bold
+              )
+            ),
             Text(widget.release.tagName),
-            const SizedBox(height: 8),
-            Text('⚠️ 强制更新，旧版本无法继续使用', style: TextStyle(color: Colors.red)),
-            const SizedBox(height: 16),
+            SizedBox(height: 8),
+            Text(
+              '⚠️ 强制更新，旧版本无法继续使用',
+              style: TextStyle(color: Colors.red)
+            ),
+            SizedBox(height: 16),
             MarkdownWidget(data: widget.release.body),
-            const SizedBox(height: 20),
+            SizedBox(height: 20),
             Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -325,9 +334,9 @@ class _UpdateSheetState extends State<UpdateSheet> {
                   FilledButton.icon(
                     onPressed: () => UpdateService().downloadAndInstallWindows(context, widget.updateData.windowsSetupExe),
                     icon: Icon(Symbols.install_desktop),
-                    label: const Text('一键安装更新'),
+                    label: Text('一键安装更新'),
                   ),
-                const SizedBox(height: 8),
+                SizedBox(height: 8),
                 if (!kIsWeb && Platform.isAndroid && widget.updateData.androidArm64.isNotEmpty)
                   FilledButton.icon(
                     onPressed: () async {
@@ -340,15 +349,15 @@ class _UpdateSheetState extends State<UpdateSheet> {
                       AzhonAppUpdate.update(model);
                     },
                     icon: Icon(Symbols.system_update),
-                    label: const Text('安卓一键更新'),
+                    label: Text('安卓一键更新'),
                   ),
-                const SizedBox(height: 8),
+                SizedBox(height: 8),
                 OutlinedButton.icon(
                   onPressed: widget.forceUpdate ? null : () async {
                     await launchUrl(Uri.parse(widget.updateData.releaseUrl));
                   },
                   icon: Icon(Icons.open_in_browser),
-                  label: const Text('浏览器下载 Linux / Web 版本'),
+                  label: Text('浏览器下载 Linux / Web 版本'),
                 ),
               ],
             )
@@ -357,13 +366,4 @@ class _UpdateSheetState extends State<UpdateSheet> {
       ),
     );
   }
-}
-
-// 简易兼容结构体
-class Github {
-  final String title;
-  final String tag;
-  final String log;
-  final String url;
-  Github({required this.title, required this.tag, required this.log, required this.url});
 }
