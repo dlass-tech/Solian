@@ -27,16 +27,16 @@ class CustomUpdateInfo {
   final bool forceUpdate;
   final String minVersionTag;
 
-  final String windowsSetupExe;
-  final String windowsPortableZip;
+  final String windowsSetupUrl;
+  final String windowsZipUrl;
 
-  final String androidArm64;
-  final String androidArmeabi;
-  final String androidX86_64;
+  final String androidArm64Url;
+  final String androidArmeabiUrl;
+  final String androidX86_64Url;
 
-  final String linuxAppImage;
-  final String linuxBundleZip;
-  final String webPackage;
+  final String linuxAppImageUrl;
+  final String linuxZipUrl;
+  final String webPackageUrl;
 
   final List history;
 
@@ -47,37 +47,36 @@ class CustomUpdateInfo {
     required this.releaseUrl,
     required this.forceUpdate,
     required this.minVersionTag,
-    required this.windowsSetupExe,
-    required this.windowsPortableZip,
-    required this.androidArm64,
-    required this.androidArmeabi,
-    required this.androidX86_64,
-    required this.linuxAppImage,
-    required this.linuxBundleZip,
-    required this.webPackage,
+    required this.windowsSetupUrl,
+    required this.windowsZipUrl,
+    required this.androidArm64Url,
+    required this.androidArmeabiUrl,
+    required this.androidX86_64Url,
+    required this.linuxAppImageUrl,
+    required this.linuxZipUrl,
+    required this.webPackageUrl,
     required this.history,
   });
 
   factory CustomUpdateInfo.fromJson(Map<String, dynamic> json) {
     final historyList = json['update_history'] as List? ?? [];
-    final history = historyList.map((e) => UpdateHistoryItem.fromJson(e)).toList();
 
     return CustomUpdateInfo(
-      versionTag: json['version_tag'] ?? '0.0.0+0',
+      versionTag: json['version_tag'] ?? '0.0.0',
       title: json['update_title'] ?? '版本更新',
       changelog: json['update_log'] ?? '暂无更新日志',
       releaseUrl: json['release_url'] ?? '',
       forceUpdate: json['force_update'] ?? false,
-      minVersionTag: json['min_app_version'] ?? '0.0.0+0',
-      windowsSetupExe: json['windows_setup_exe'] ?? '',
-      windowsPortableZip: json['windows_portable_zip'] ?? '',
-      androidArm64: json['android_arm64_v8a'] ?? '',
-      androidArmeabi: json['android_armeabi_v7a'] ?? '',
-      androidX86_64: json['android_x86_64'] ?? '',
-      linuxAppImage: json['linux_appimage'] ?? '',
-      linuxBundleZip: json['linux_bundle_zip'] ?? '',
-      webPackage: json['web_package'] ?? '',
-      history: history,
+      minVersionTag: json['min_app_version'] ?? '0.0.0',
+      windowsSetupUrl: json['windows_setup'] ?? '',
+      windowsZipUrl: json['windows_zip'] ?? '',
+      androidArm64Url: json['android_arm64_v8a'] ?? '',
+      androidArmeabiUrl: json['android_armeabi_v7a'] ?? '',
+      androidX86_64Url: json['android_x86_64'] ?? '',
+      linuxAppImageUrl: json['linux_appimage'] ?? '',
+      linuxZipUrl: json['linux_zip'] ?? '',
+      webPackageUrl: json['web_package'] ?? '',
+      history: historyList,
     );
   }
 }
@@ -115,8 +114,8 @@ class UpdateHistoryItem {
   }
 }
 
-/// 旧兼容Release结构
-class GithubReleaseInfo {
+/// GitHub Release 通用结构
+class GithubRelease {
   final String tagName;
   final String name;
   final String body;
@@ -124,7 +123,7 @@ class GithubReleaseInfo {
   final DateTime createdAt;
   final List assets;
 
-  const GithubReleaseInfo({
+  const GithubRelease({
     required this.tagName,
     required this.name,
     required this.body,
@@ -134,31 +133,31 @@ class GithubReleaseInfo {
   });
 }
 
-/// 版本号解析对比
-class _ParsedVersion implements Comparable<_ParsedVersion> {
+/// 版本号对比解析
+class VersionCompare implements Comparable<VersionCompare> {
   final int major;
   final int minor;
   final int patch;
   final int build;
 
-  const _ParsedVersion(this.major, this.minor, this.patch, this.build);
+  const VersionCompare(this.major, this.minor, this.patch, this.build);
 
-  static _ParsedVersion? tryParse(String input) {
+  static VersionCompare? parse(String input) {
     final parts = input.split('+');
-    final ver = parts[0].split('.');
-    final build = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+    final verParts = parts[0].split('.');
+    final buildNum = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
 
-    if (ver.length != 3) return null;
-    return _ParsedVersion(
-      int.tryParse(ver[0]) ?? 0,
-      int.tryParse(ver[1]) ?? 0,
-      int.tryParse(ver[2]) ?? 0,
-      build,
-    );
+    if (verParts.length != 3) return null;
+    final a = int.tryParse(verParts[0]);
+    final b = int.tryParse(verParts[1]);
+    final c = int.tryParse(verParts[2]);
+    if (a == null || b == null || c == null) return null;
+
+    return VersionCompare(a, b, c, buildNum);
   }
 
   @override
-  int compareTo(_ParsedVersion other) {
+  int compareTo(VersionCompare other) {
     if (major != other.major) return major.compareTo(other.major);
     if (minor != other.minor) return minor.compareTo(other.minor);
     if (patch != other.patch) return patch.compareTo(other.patch);
@@ -166,7 +165,7 @@ class _ParsedVersion implements Comparable<_ParsedVersion> {
   }
 }
 
-const bool kEnableBuiltInUpdate = true;
+const bool enableUpdateCheck = true;
 
 class UpdateService {
   UpdateService({Dio? dio, this.useProxy = false})
@@ -178,16 +177,16 @@ class UpdateService {
 
   final Dio _dio;
   final bool useProxy;
-  static const String updateJsonUrl = 'https://fs.dy.ci/d/meta/update_meta/index.json';
+  static const String updateApiUrl = 'https://fs.dy.ci/d/meta/update_meta/index.json';
 
-  CustomUpdateInfo? _updateData;
+  CustomUpdateInfo? _latestData;
 
-  /// 修复debug_sheet报错：补回原有方法
-  Future<GithubReleaseInfo?> fetchLatestRelease() async {
+  /// 兼容旧调试面板方法
+  Future<GithubRelease?> fetchLatestRelease() async {
     final data = await fetchUpdateConfig();
     if (data == null) return null;
 
-    return GithubReleaseInfo(
+    return GithubRelease(
       tagName: data.versionTag,
       name: data.title,
       body: data.changelog,
@@ -196,111 +195,111 @@ class UpdateService {
     );
   }
 
-  Future checkForUpdates(BuildContext context) async {
-    if (!kEnableBuiltInUpdate) return;
-    Logger.root.info('[更新] 开始检测云端版本');
+  Future<void> checkForUpdates(BuildContext context) async {
+    if (!enableUpdateCheck) return;
+    Logger.root.info('[更新] 正在检测新版本');
 
     try {
       final data = await fetchUpdateConfig();
       if (data == null) return;
-      _updateData = data;
+      _latestData = data;
 
       final pkg = await PackageInfo.fromPlatform();
-      final local = '${pkg.version}+${pkg.buildNumber}';
+      final localVer = '${pkg.version}+${pkg.buildNumber}';
 
-      final localVer = _ParsedVersion.tryParse(local);
-      final latestVer = _ParsedVersion.tryParse(data.versionTag);
-      final minVer = _ParsedVersion.tryParse(data.minVersionTag);
+      final local = VersionCompare.parse(localVer);
+      final latest = VersionCompare.parse(data.versionTag);
+      final min = VersionCompare.parse(data.minVersionTag);
 
-      if (minVer != null && localVer != null && localVer.compareTo(minVer) < 0) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('当前版本已过期，请升级应用')),
-          );
-        }
-        return;
-      }
+      if (local == null || latest == null) return;
 
-      final hasNew = latestVer != null && localVer != null && latestVer.compareTo(localVer) > 0;
+      final needForce = min != null && local.compareTo(min) < 0;
+      final hasNew = local.compareTo(latest) < 0;
+
       if (!hasNew) {
         Logger.root.info('[更新] 当前已是最新版本');
         return;
       }
 
-      if (!context.mounted) return;
-      await showUpdateSheet(context);
+      if (context.mounted) {
+        showUpdateSheet(context, data: data, force: needForce);
+      }
     } catch (e) {
       Logger.root.severe('[更新检测失败] $e');
     }
   }
 
-  Future showUpdateSheet(BuildContext context) async {
-    if (!context.mounted || _updateData == null) return;
-
+  Future<void> showUpdateSheet(BuildContext context, {required CustomUpdateInfo data, required bool force}) async {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       useRootNavigator: true,
-      builder: (ctx) => _UpdateSheet(
-        release: GithubReleaseInfo(
-          tagName: _updateData!.versionTag,
-          name: _updateData!.title,
-          body: _updateData!.changelog,
-          htmlUrl: _updateData!.releaseUrl,
+      builder: (ctx) => UpdateSheet(
+        release: GithubRelease(
+          tagName: data.versionTag,
+          name: data.title,
+          body: data.changelog,
+          htmlUrl: data.releaseUrl,
           createdAt: DateTime.now(),
         ),
-        updateData: _updateData!,
-        forceUpdate: true,
+        updateData: data,
+        forceUpdate: force,
       ),
     );
   }
 
-  /// Linux+Web 全部屏蔽进程安装，不报错
-  Future downloadAndInstallWindowsExe(BuildContext context, String url) async {
+  /// 仅Windows执行安装，Linux/Web全部跳过
+  Future<void> downloadAndInstallWindows(BuildContext context, String url) async {
     if (kIsWeb || Platform.isLinux) return;
     if (!Platform.isWindows) return;
 
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => _WindowsUpdateDialog(installUrl: url),
+      builder: (ctx) => WindowsUpdateDialog(installUrl: url),
     );
   }
 
   Future<CustomUpdateInfo?> fetchUpdateConfig() async {
-    final resp = await _dio.get(updateJsonUrl);
+    final resp = await _dio.get(updateApiUrl);
     if (resp.statusCode != 200) return null;
     return CustomUpdateInfo.fromJson(resp.data);
   }
 }
 
-class _WindowsUpdateDialog extends StatefulWidget {
+class WindowsUpdateDialog extends StatefulWidget {
   final String installUrl;
-  const _WindowsUpdateDialog({required this.installUrl});
+  const WindowsUpdateDialog({super.key, required this.installUrl});
 
   @override
-  State<_WindowsUpdateDialog> createState() => _WindowsUpdateDialogState();
+  State<WindowsUpdateDialog> createState() => _WindowsUpdateDialogState();
 }
 
-class _WindowsUpdateDialogState extends State<_WindowsUpdateDialog> {
-  final ValueNotifier progress = ValueNotifier(0);
-  final ValueNotifier status = ValueNotifier('正在下载安装包');
+class _WindowsUpdateDialogState extends State<WindowsUpdateDialog> {
+  final ValueNotifier<double> progress = ValueNotifier(0);
+  final ValueNotifier<String> status = ValueNotifier('正在下载安装包');
 
   @override
   void initState() {
     super.initState();
-    if (!kIsWeb && Platform.isWindows) _startInstall();
+    if (!kIsWeb && Platform.isWindows) {
+      _startInstallProcess();
+    }
   }
 
-  Future _startInstall() async {
+  Future<void> _startInstallProcess() async {
     try {
       final tempDir = await getTemporaryDirectory();
-      final savePath = path.join(tempDir.path, 'MeikeSetup.exe');
+      final savePath = path.join(tempDir.path, 'SolianSetup.exe');
 
       await Dio().download(
         widget.installUrl,
         savePath,
-        onReceiveProgress: (r, t) => progress.value = r / t,
+        onReceiveProgress: (received, total) {
+          if (total != 0) {
+            progress.value = received / total;
+          }
+        },
       );
 
       status.value = '正在启动安装程序';
@@ -316,7 +315,7 @@ class _WindowsUpdateDialogState extends State<_WindowsUpdateDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('正在更新每刻'),
+      title: const Text('正在更新'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -327,7 +326,7 @@ class _WindowsUpdateDialogState extends State<_WindowsUpdateDialog> {
           const SizedBox(height: 12),
           ValueListenableBuilder(
             valueListenable: status,
-            builder: (_, s, __) => Text(s),
+            builder: (_, txt, __) => Text(txt),
           ),
         ],
       ),
@@ -335,104 +334,76 @@ class _WindowsUpdateDialogState extends State<_WindowsUpdateDialog> {
   }
 }
 
-class _UpdateSheet extends StatefulWidget {
-  final GithubReleaseInfo release;
+// ========= 重点修复：Widget与State名字严格配对 =========
+class UpdateSheet extends StatefulWidget {
+  final GithubRelease release;
   final CustomUpdateInfo updateData;
   final bool forceUpdate;
 
-  const _UpdateSheet({required this.release, required this.updateData, required this.forceUpdate});
+  const UpdateSheet({
+    super.key,
+    required this.release,
+    required this.updateData,
+    required this.forceUpdate,
+  });
 
   @override
-  State<_UpdateSheetState> createState() => _UpdateSheetState();
+  State<UpdateSheet> createState() => _UpdateSheetState();
 }
 
-class _UpdateSheetState extends State<_UpdateSheetState> {
+class _UpdateSheetState extends State<UpdateSheet> {
   @override
   Widget build(BuildContext context) {
     return SheetScaffold(
       titleText: '发现新版本',
-      child: Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom + 16),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(widget.release.name, style: Theme.of(context).textTheme.titleMedium).bold(),
-                  Text(widget.release.tagName),
-                  if (widget.forceUpdate)
-                    Text('⚠️ 强制更新，不更新无法继续使用', style: TextStyle(color: Colors.red)),
-                ],
-              ),
-            ),
-            const Divider(),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: EdgeInsets.all(16),
-                child: MarkdownTextContent(content: widget.release.body),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  // Windows专用按钮
-                  if (!kIsWeb && Platform.isWindows && widget.updateData.windowsSetupExe.isNotEmpty)
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed: () => UpdateService().downloadAndInstallWindowsExe(
-                            context, widget.updateData.windowsSetupExe),
-                        icon: const Icon(Symbols.install_desktop),
-                        label: const Text('一键安装更新'),
-                      ),
-                    ),
-                  const SizedBox(height: 8),
-                  // 安卓专用按钮
-                  if (!kIsWeb && Platform.isAndroid && widget.updateData.androidArm64.isNotEmpty)
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed: () async {
-                          try {
-                            final model = UpdateModel(
-                              widget.updateData.androidArm64,
-                              'Meike.apk',
-                              'launcher_icon',
-                              '',
-                            );
-                            AzhonAppUpdate.update(model);
-                          } catch (e) {
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('启动更新失败：$e')),
-                              );
-                            }
-                          }
-                        },
-                        icon: const Icon(Symbols.system_update),
-                        label: const Text('安卓一键更新'),
-                      ),
-                    ),
-                  const SizedBox(height: 8),
-                  // Linux+Web统一浏览器跳转
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: widget.forceUpdate
-                          ? null
-                          : () async {
-                              await launchUrl(Uri.parse(widget.updateData.releaseUrl));
-                            },
-                      icon: const Icon(Icons.open_in_browser),
-                      label: const Text('浏览器下载Linux/便携版'),
-                    ),
+            Text(widget.release.name).titleMedium().bold(),
+            Text(widget.release.tagName),
+            if (widget.forceUpdate)
+              const Text('⚠️ 强制更新，旧版本无法继续使用', color: Colors.red),
+            const SizedBox(height: 16),
+            MarkdownWidget(data: widget.release.body),
+            const SizedBox(height: 20),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Windows按钮
+                if (!kIsWeb && Platform.isWindows && widget.updateData.windowsSetupUrl.isNotEmpty)
+                  FilledButton.icon(
+                    onPressed: () => UpdateService().downloadAndInstallWindows(context, widget.updateData.windowsSetupUrl),
+                    icon: Icon(Symbols.install_desktop),
+                    label: const Text('一键安装更新'),
                   ),
-                ],
-              ),
+                const SizedBox(height: 8),
+                // 安卓按钮
+                if (!kIsWeb && Platform.isAndroid && widget.updateData.androidArm64Url.isNotEmpty)
+                  FilledButton.icon(
+                    onPressed: () async {
+                      final model = UpdateModel(
+                        widget.updateData.androidArm64Url,
+                        'Solian.apk',
+                        'launcher_icon',
+                        '',
+                      );
+                      AzhonAppUpdate.update(model);
+                    },
+                    icon: Icon(Symbols.system_update),
+                    label: const Text('安卓一键更新'),
+                  ),
+                const SizedBox(height: 8),
+                // Linux / Web 统一跳转
+                OutlinedButton.icon(
+                  onPressed: widget.forceUpdate ? null : () async {
+                    await launchUrl(Uri.parse(widget.updateData.releaseUrl));
+                  },
+                  icon: Icon(Icons.open_in_browser),
+                  label: const Text('浏览器下载 Linux / Web 版本'),
+                ),
+              ],
             )
           ],
         ),
