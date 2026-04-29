@@ -42,7 +42,6 @@ class CustomUpdateInfo {
 
   CustomUpdateInfo({
     required this.versionTag,
-    required this.versionTag,
     required this.title,
     required this.changelog,
     required this.releaseUrl,
@@ -135,16 +134,6 @@ class GithubReleaseInfo {
   });
 }
 
-class GithubReleaseAsset {
-  final String name;
-  final String browserDownloadUrl;
-
-  const GithubReleaseAsset({
-    required this.name,
-    required this.browserDownloadUrl,
-  });
-}
-
 /// 版本号解析对比
 class _ParsedVersion implements Comparable<_ParsedVersion> {
   final int major;
@@ -193,6 +182,20 @@ class UpdateService {
 
   CustomUpdateInfo? _updateData;
 
+  /// 修复debug_sheet报错：补回原有方法
+  Future<GithubReleaseInfo?> fetchLatestRelease() async {
+    final data = await fetchUpdateConfig();
+    if (data == null) return null;
+
+    return GithubReleaseInfo(
+      tagName: data.versionTag,
+      name: data.title,
+      body: data.changelog,
+      htmlUrl: data.releaseUrl,
+      createdAt: DateTime.now(),
+    );
+  }
+
   Future checkForUpdates(BuildContext context) async {
     if (!kEnableBuiltInUpdate) return;
     Logger.root.info('[更新] 开始检测云端版本');
@@ -209,7 +212,6 @@ class UpdateService {
       final latestVer = _ParsedVersion.tryParse(data.versionTag);
       final minVer = _ParsedVersion.tryParse(data.minVersionTag);
 
-      // 低于最低版本强制拦截
       if (minVer != null && localVer != null && localVer.compareTo(minVer) < 0) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -226,22 +228,13 @@ class UpdateService {
       }
 
       if (!context.mounted) return;
-      final release = GithubReleaseInfo(
-        tagName: data.versionTag,
-        name: data.title,
-        body: data.changelog,
-        htmlUrl: data.releaseUrl,
-        createdAt: DateTime.now(),
-        assets: [],
-      );
-
-      await showUpdateSheet(context, release);
+      await showUpdateSheet(context);
     } catch (e) {
       Logger.root.severe('[更新检测失败] $e');
     }
   }
 
-  Future showUpdateSheet(BuildContext context, GithubReleaseInfo release) async {
+  Future showUpdateSheet(BuildContext context) async {
     if (!context.mounted || _updateData == null) return;
 
     await showModalBottomSheet(
@@ -249,15 +242,24 @@ class UpdateService {
       isScrollControlled: true,
       useRootNavigator: true,
       builder: (ctx) => _UpdateSheet(
-        release: release,
+        release: GithubReleaseInfo(
+          tagName: _updateData!.versionTag,
+          name: _updateData!.title,
+          body: _updateData!.changelog,
+          htmlUrl: _updateData!.releaseUrl,
+          createdAt: DateTime.now(),
+        ),
         updateData: _updateData!,
-        forceUpdate: _updateData!.forceUpdate,
+        forceUpdate: true,
       ),
     );
   }
 
-  /// Windows自动下载安装EXE
+  /// Linux+Web 全部屏蔽进程安装，不报错
   Future downloadAndInstallWindowsExe(BuildContext context, String url) async {
+    if (kIsWeb || Platform.isLinux) return;
+    if (!Platform.isWindows) return;
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -272,7 +274,6 @@ class UpdateService {
   }
 }
 
-/// Windows下载解压安装弹窗
 class _WindowsUpdateDialog extends StatefulWidget {
   final String installUrl;
   const _WindowsUpdateDialog({required this.installUrl});
@@ -288,7 +289,7 @@ class _WindowsUpdateDialogState extends State<_WindowsUpdateDialog> {
   @override
   void initState() {
     super.initState();
-    _startInstall();
+    if (!kIsWeb && Platform.isWindows) _startInstall();
   }
 
   Future _startInstall() async {
@@ -334,7 +335,6 @@ class _WindowsUpdateDialogState extends State<_WindowsUpdateDialog> {
   }
 }
 
-/// 更新底部弹窗
 class _UpdateSheet extends StatefulWidget {
   final GithubReleaseInfo release;
   final CustomUpdateInfo updateData;
@@ -346,7 +346,7 @@ class _UpdateSheet extends StatefulWidget {
   State<_UpdateSheetState> createState() => _UpdateSheetState();
 }
 
-class _UpdateSheetState extends State<_UpdateSheet> {
+class _UpdateSheetState extends State<_UpdateSheetState> {
   @override
   Widget build(BuildContext context) {
     return SheetScaffold(
@@ -371,7 +371,7 @@ class _UpdateSheetState extends State<_UpdateSheet> {
             const Divider(),
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
+                padding: EdgeInsets.all(16),
                 child: MarkdownTextContent(content: widget.release.body),
               ),
             ),
@@ -379,8 +379,8 @@ class _UpdateSheetState extends State<_UpdateSheet> {
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
-                  // Windows 安装版
-                  if (Platform.isWindows && widget.updateData.windowsSetupExe.isNotEmpty)
+                  // Windows专用按钮
+                  if (!kIsWeb && Platform.isWindows && widget.updateData.windowsSetupExe.isNotEmpty)
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton.icon(
@@ -391,8 +391,8 @@ class _UpdateSheetState extends State<_UpdateSheet> {
                       ),
                     ),
                   const SizedBox(height: 8),
-                  // 安卓自动更新
-                  if (Platform.isAndroid && widget.updateData.androidArm64.isNotEmpty)
+                  // 安卓专用按钮
+                  if (!kIsWeb && Platform.isAndroid && widget.updateData.androidArm64.isNotEmpty)
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton.icon(
@@ -418,10 +418,10 @@ class _UpdateSheetState extends State<_UpdateSheet> {
                       ),
                     ),
                   const SizedBox(height: 8),
-                  // 前往网页下载全平台
+                  // Linux+Web统一浏览器跳转
                   SizedBox(
                     width: double.infinity,
-                    widget: OutlinedButton.icon(
+                    child: OutlinedButton.icon(
                       onPressed: widget.forceUpdate
                           ? null
                           : () async {
