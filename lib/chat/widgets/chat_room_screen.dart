@@ -176,13 +176,28 @@ class ChatRoomScreen extends HookConsumerWidget {
     final lastBackgroundTime = useRef<DateTime?>(null);
     const backgroundSyncThreshold = Duration(seconds: 30);
 
-    useEffect(() {
-      Future.microtask(() async {
-        if (!context.mounted) return;
-        await messagesNotifier.syncMessages();
-      });
-      return null;
-    }, [id]);
+    final lastResyncAt = useRef<DateTime?>(DateTime.now());
+    final isResyncing = useRef(false);
+
+    Future<void> resyncRoom({
+      bool force = false,
+      String reason = 'unknown',
+    }) async {
+      if (isResyncing.value) return;
+      final now = DateTime.now();
+      final cooldownPassed =
+          lastResyncAt.value == null ||
+          now.difference(lastResyncAt.value!) > const Duration(seconds: 8);
+      if (!force && !cooldownPassed) return;
+
+      isResyncing.value = true;
+      lastResyncAt.value = now;
+      try {
+        await messagesNotifier.initialize(forceRemoteRefresh: false);
+      } finally {
+        isResyncing.value = false;
+      }
+    }
 
     useEffect(() {
       Future.microtask(() {
@@ -206,7 +221,6 @@ class ChatRoomScreen extends HookConsumerWidget {
 
     final lifecycleState = ref.watch(appLifecycleStateProvider);
     final previousLifecycleState = useRef<AppLifecycleState?>(null);
-    final isResyncingAfterResume = useState(false);
     final wsDisconnectedSinceBackground = useRef(false);
     final wasWsConnected = useRef<bool?>(null);
 
@@ -236,7 +250,7 @@ class ChatRoomScreen extends HookConsumerWidget {
         lastBackgroundTime.value = DateTime.now();
       }
 
-      if (resumedFromBackground && !isResyncingAfterResume.value) {
+      if (resumedFromBackground) {
         final backgroundDuration = lastBackgroundTime.value != null
             ? DateTime.now().difference(lastBackgroundTime.value!)
             : Duration.zero;
@@ -247,16 +261,9 @@ class ChatRoomScreen extends HookConsumerWidget {
             !isDesktop ||
             wsDisconnectedSinceBackground.value ||
             wasBackgroundedLongEnough;
-        isResyncingAfterResume.value = true;
         Future<void>(() async {
-          try {
-            if (shouldSync) {
-              await messagesNotifier.initialize(forceRemoteRefresh: false);
-            }
-          } finally {
-            if (context.mounted) {
-              isResyncingAfterResume.value = false;
-            }
+          if (shouldSync) {
+            await resyncRoom(reason: 'app-resume');
           }
         });
         wsDisconnectedSinceBackground.value = false;
@@ -271,18 +278,9 @@ class ChatRoomScreen extends HookConsumerWidget {
       final isConnected = checkWsConnected();
       final previousConnected = wasWsConnected.value;
 
-      if (previousConnected == false &&
-          isConnected &&
-          !isResyncingAfterResume.value) {
-        isResyncingAfterResume.value = true;
+      if (previousConnected == false && isConnected) {
         Future<void>(() async {
-          try {
-            await messagesNotifier.initialize(forceRemoteRefresh: false);
-          } finally {
-            if (context.mounted) {
-              isResyncingAfterResume.value = false;
-            }
-          }
+          await resyncRoom(reason: 'ws-reconnected');
         });
       }
 
@@ -336,8 +334,6 @@ class ChatRoomScreen extends HookConsumerWidget {
     final lastMessageCount = useRef<int>(0);
     final isBackToBottomVisible = useState<bool>(false);
     final hideBackToBottomTimer = useRef<Timer?>(null);
-    final lastScrollPosition = useRef<double>(0);
-    final scrollStabilityCounter = useRef<int>(0);
 
     // Watch loading state from messages notifier
     final isLoadingMore = messagesNotifier.isLoadingMore;
@@ -356,7 +352,7 @@ class ChatRoomScreen extends HookConsumerWidget {
       return null;
     }, [messages.value?.length, isAtLatestMessages.value, isLoadingMore]);
 
-    // Auto-hide back-to-bottom button after 3s of no scroll
+    // Auto-hide back-to-bottom button after idle period.
     useEffect(() {
       if (!isAtLatestMessages.value) {
         isBackToBottomVisible.value = true;
@@ -366,23 +362,11 @@ class ChatRoomScreen extends HookConsumerWidget {
           if (!controller.hasClients || controller.positions.length != 1) {
             return;
           }
-          final currentPos = controller.positions.first.pixels;
-          final delta = (currentPos - lastScrollPosition.value).abs();
-
-          // Reset timer on significant scroll movement
-          if (delta > 5) {
-            scrollStabilityCounter.value = 0;
-            isBackToBottomVisible.value = true;
-            hideBackToBottomTimer.value?.cancel();
-            hideBackToBottomTimer.value = Timer(const Duration(seconds: 3), () {
-              isBackToBottomVisible.value = false;
-            });
-          } else {
-            // Small movement, increment stability counter
-            scrollStabilityCounter.value++;
-          }
-
-          lastScrollPosition.value = currentPos;
+          isBackToBottomVisible.value = true;
+          hideBackToBottomTimer.value?.cancel();
+          hideBackToBottomTimer.value = Timer(const Duration(seconds: 2), () {
+            isBackToBottomVisible.value = false;
+          });
         }
 
         final controller = scrollControllerRef.value;
@@ -398,7 +382,7 @@ class ChatRoomScreen extends HookConsumerWidget {
           hideBackToBottomTimer.value?.cancel();
         };
       } else {
-        // At bottom, hide button and reset counter
+        // At bottom, hide button and reset badge.
         isBackToBottomVisible.value = false;
         newMessagesCount.value = 0;
         hideBackToBottomTimer.value?.cancel();
@@ -506,6 +490,27 @@ class ChatRoomScreen extends HookConsumerWidget {
       );
     }, [messages, chatStateNotifier, messagesNotifier]);
 
+    final jumpAndRevealMessage = useCallback((String messageId) {
+      messagesNotifier.jumpToMessage(messageId).then((index) {
+        if (index != -1 && context.mounted) {
+          ref
+              .read(flashingMessagesProvider.notifier)
+              .update((set) => set.union({messageId}));
+          messages.when(
+            data: (messageList) {
+              chatStateNotifier.scrollToMessage(
+                messageId: messageId,
+                messageList: messageList,
+                jumpToMessage: messagesNotifier.jumpToMessage,
+              );
+            },
+            loading: () {},
+            error: (_, _) {},
+          );
+        }
+      });
+    }, [messagesNotifier, ref, messages, chatStateNotifier, context]);
+
     final filteredMessages = messages;
 
     final visibleLastReadAnchorMessageId = (() {
@@ -547,25 +552,8 @@ class ChatRoomScreen extends HookConsumerWidget {
       if (targetIndex == -1) return;
       final targetId = list[targetIndex].id;
 
-      messagesNotifier.jumpToMessage(targetId).then((index) {
-        if (index != -1 && context.mounted) {
-          ref
-              .read(flashingMessagesProvider.notifier)
-              .update((set) => set.union({targetId}));
-          messages.when(
-            data: (messageList) {
-              chatStateNotifier.scrollToMessage(
-                messageId: targetId,
-                messageList: messageList,
-                jumpToMessage: messagesNotifier.jumpToMessage,
-              );
-            },
-            loading: () {},
-            error: (_, _) {},
-          );
-        }
-      });
-    }, [savedLastReadAt.value, messagesNotifier, messages, chatStateNotifier]);
+      jumpAndRevealMessage(targetId);
+    }, [savedLastReadAt.value, messages, jumpAndRevealMessage]);
 
     return Stack(
       children: [
@@ -599,24 +587,7 @@ class ChatRoomScreen extends HookConsumerWidget {
                   if (result is SearchMessagesResult &&
                       messages.value != null) {
                     final messageId = result.messageId;
-                    messagesNotifier.jumpToMessage(messageId).then((index) {
-                      if (index != -1 && context.mounted) {
-                        ref
-                            .read(flashingMessagesProvider.notifier)
-                            .update((set) => set.union({messageId}));
-                        messages.when(
-                          data: (messageList) {
-                            chatStateNotifier.scrollToMessage(
-                              messageId: messageId,
-                              messageList: messageList,
-                              jumpToMessage: messagesNotifier.jumpToMessage,
-                            );
-                          },
-                          loading: () {},
-                          error: (_, _) {},
-                        );
-                      }
-                    });
+                    jumpAndRevealMessage(messageId);
                   }
                 },
               ),
@@ -854,7 +825,7 @@ class ChatRoomScreen extends HookConsumerWidget {
                             messageController:
                                 chatStateNotifier.messageController,
                             chatRoom: room,
-                            onSend: () => chatStateNotifier.sendMessage(ref),
+                            onSend: chatStateNotifier.sendMessage,
                             onClear: () {
                               if (chatState.messageEditingTo != null) {
                                 chatStateNotifier.clearAttachmentsOnly();
