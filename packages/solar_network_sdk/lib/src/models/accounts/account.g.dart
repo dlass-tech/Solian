@@ -283,9 +283,8 @@ _SnNotification _$SnNotificationFromJson(Map<String, dynamic> json) =>
       topic: json['topic'] as String,
       title: json['title'] as String,
       subtitle: json['subtitle'] as String? ?? '',
-      content: json['content'] as String,
+      body: json['content'] as String,
       meta: json['meta'] as Map<String, dynamic>? ?? const {},
-      priority: (json['priority'] as num).toInt(),
       viewedAt: json['viewed_at'] == null
           ? null
           : DateTime.parse(json['viewed_at'] as String),
@@ -299,9 +298,8 @@ Map<String, dynamic> _$SnNotificationToJson(_SnNotification instance) =>
       'topic': instance.topic,
       'title': instance.title,
       'subtitle': instance.subtitle,
-      'content': instance.content,
+      'content': instance.body,
       'meta': instance.meta,
-      'priority': instance.priority,
       'viewed_at': instance.viewedAt?.toIso8601String(),
       'account_id': instance.accountId,
     };
@@ -571,6 +569,7 @@ _SnNotificationPushSubscription _$SnNotificationPushSubscriptionFromJson(
   accountId: json['account_id'] as String,
   deviceId: json['device_id'] as String,
   deviceToken: json['device_token'] as String,
+  deviceName: json['device_name'] as String?,
   provider: $enumDecode(
     _$SnNotificationPushSubscriptionProviderEnumMap,
     json['provider'],
@@ -590,6 +589,7 @@ Map<String, dynamic> _$SnNotificationPushSubscriptionToJson(
   'account_id': instance.accountId,
   'device_id': instance.deviceId,
   'device_token': instance.deviceToken,
+  'device_name': instance.deviceName,
   'provider':
       _$SnNotificationPushSubscriptionProviderEnumMap[instance.provider]!,
   'is_activated': instance.isActivated,

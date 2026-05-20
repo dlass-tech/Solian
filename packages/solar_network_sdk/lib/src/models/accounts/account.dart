@@ -226,9 +226,8 @@ sealed class SnNotification with _$SnNotification {
     required String topic,
     required String title,
     @Default('') String subtitle,
-    required String content,
+    @JsonKey(name: 'content') required String body,
     @Default({}) Map<String, dynamic> meta,
-    required int priority,
     required DateTime? viewedAt,
     required String accountId,
   }) = _SnNotification;
@@ -450,6 +449,7 @@ sealed class SnNotificationPushSubscription
     required String accountId,
     required String deviceId,
     required String deviceToken,
+    String? deviceName,
     required SnNotificationPushSubscriptionProvider provider,
     required bool isActivated,
     DateTime? lastUsedAt,
