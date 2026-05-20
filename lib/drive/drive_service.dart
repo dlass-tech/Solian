@@ -8,12 +8,16 @@ import 'package:cross_file/cross_file.dart';
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:island/core/config.dart';
 import 'package:island/core/database.dart';
 import 'package:island/core/network.dart';
 import 'package:island/drive/screens/upload_tasks.dart';
+import 'package:island/drive/widgets/quota_sidebar.dart';
+import 'package:island/route.dart';
 import 'package:island/shared/widgets/alert.dart';
+import 'package:island/shared/widgets/layouts/sheet_scaffold.dart';
 import 'package:mime/mime.dart';
 import 'package:native_exif/native_exif.dart';
 import 'package:path/path.dart' show extension;
@@ -34,6 +38,18 @@ const int driveDirectUploadMaxFileSizeBytes =
     driveUploadChunkSizeBytes * driveDirectUploadMaxChunks;
 const int driveChunkUploadConcurrency = 3;
 
+class DriveQuotaExceededException implements Exception {
+  final String message;
+
+  const DriveQuotaExceededException([
+    this.message =
+        'Storage quota exceeded. Free up space or upgrade your quota and try again.',
+  ]);
+
+  @override
+  String toString() => message;
+}
+
 class _ConcurrencyLimiter {
   final int maxConcurrent;
   final List<Future<void>> _running = [];
@@ -48,6 +64,81 @@ class _ConcurrencyLimiter {
     final future = task();
     _running.add(future.then((_) => _running.remove(future)));
     return future;
+  }
+}
+
+class _DriveQuotaExceededSheet extends StatelessWidget {
+  final Map<String, dynamic>? usage;
+  final Map<String, dynamic>? quota;
+  final List<SnFilePool>? pools;
+  final String message;
+
+  const _DriveQuotaExceededSheet({
+    required this.usage,
+    required this.quota,
+    required this.pools,
+    required this.message,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SheetScaffold(
+      titleText: 'Storage quota',
+      heightFactor: 0.74,
+      child: Column(
+        children: [
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.errorContainer.withOpacity(0.5),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(
+                  Icons.cloud_off_rounded,
+                  color: theme.colorScheme.onErrorContainer,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Upload blocked',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: theme.colorScheme.onErrorContainer,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        message,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onErrorContainer,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: QuotaSidebarWidget(
+              usage: usage,
+              quota: quota,
+              pools: pools,
+              showPoolFilter: false,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -68,7 +159,6 @@ class DriveE2eeFileEnvelope {
 
   static Map<String, dynamic>? _extractE2eeMeta(SnCloudFile file) {
     final fileMeta = file.fileMeta;
-    if (fileMeta is! Map) return null;
     final root = Map<String, dynamic>.from(fileMeta as Map);
     final e2ee = root['e2ee'];
     if (e2ee is! Map) return null;
@@ -77,7 +167,6 @@ class DriveE2eeFileEnvelope {
 
   static String? extractEncryptionKey(SnCloudFile file) {
     final fileMeta = file.fileMeta;
-    if (fileMeta is! Map) return null;
     final root = Map<String, dynamic>.from(fileMeta as Map);
     final e2ee = root['e2ee'];
     if (e2ee is Map) {
@@ -382,9 +471,150 @@ FileUploader driveFileUploader(Ref ref) {
 }
 
 class FileUploader {
+  static Future<void>? _activeQuotaSheetFuture;
   final Ref ref;
   late final _client = ref.watch(solarNetworkClientProvider).dio;
+  late final _driveApi = ref.watch(solarNetworkClientProvider).drive;
   FileUploader(this.ref);
+
+  String _parseUploadError(DioException err) {
+    String? message;
+    if (err.response?.data is String) {
+      message = err.response?.data as String?;
+    } else if (err.response?.data?['message'] != null) {
+      message = <String?>[
+        err.response?.data?['message']?.toString(),
+        err.response?.data?['detail']?.toString(),
+      ].where((e) => e != null).cast<String>().map((e) => e.trim()).join('\n');
+    } else if (err.response?.data?['errors'] != null) {
+      final errors = err.response?.data['errors'] as Map<String, dynamic>;
+      message = errors.values
+          .map(
+            (ele) =>
+                (ele as List<dynamic>).map((ele) => ele.toString()).join('\n'),
+          )
+          .join('\n');
+    }
+    if (message == null || message.isEmpty) {
+      message = err.response?.statusMessage;
+    }
+    message ??= err.message;
+    return message ?? err.toString();
+  }
+
+  bool _isQuotaExceededError(DioException err) {
+    if (err.response?.statusCode != 403) return false;
+    final remoteMessage = _parseUploadError(err).toLowerCase();
+    return remoteMessage.contains('quota') ||
+        remoteMessage.contains('storage') ||
+        remoteMessage.contains('space') ||
+        err.requestOptions.path.startsWith('/drive/files/upload');
+  }
+
+  String _buildQuotaExceededMessage(DioException err) {
+    final remoteMessage = _parseUploadError(err).trim();
+    if (remoteMessage.isEmpty) {
+      return const DriveQuotaExceededException().toString();
+    }
+    final normalized = remoteMessage.toLowerCase();
+    if (normalized.contains('quota') || normalized.contains('storage')) {
+      return remoteMessage;
+    }
+    return 'Storage quota exceeded. $remoteMessage';
+  }
+
+  Future<void> _showQuotaExceededSheet({required String message}) {
+    final activeSheet = _activeQuotaSheetFuture;
+    if (activeSheet != null) return activeSheet;
+
+    final context = ref.read(routerProvider).navigatorKey.currentContext;
+    if (context == null || !context.mounted) {
+      return Future.value();
+    }
+
+    final future = showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (sheetContext) {
+        return FutureBuilder<
+          ({
+            Map<String, dynamic>? usage,
+            Map<String, dynamic>? quota,
+            List<SnFilePool> pools,
+          })
+        >(
+          future: () async {
+            final usageFuture = _driveApi.getTotalUsage();
+            final quotaFuture = _driveApi.getQuota();
+            final poolsFuture = _driveApi.listPools();
+            final results = await Future.wait<dynamic>([
+              usageFuture,
+              quotaFuture,
+              poolsFuture,
+            ]);
+            return (
+              usage: results[0] as Map<String, dynamic>?,
+              quota: results[1] as Map<String, dynamic>?,
+              pools: results[2] as List<SnFilePool>,
+            );
+          }(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const SheetScaffold(
+                titleText: 'Storage quota',
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+
+            if (snapshot.hasError) {
+              return SheetScaffold(
+                titleText: 'Storage quota',
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: SelectableText(
+                    message,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ),
+              );
+            }
+
+            final data = snapshot.data;
+            return _DriveQuotaExceededSheet(
+              usage: data?.usage,
+              quota: data?.quota,
+              pools: data?.pools,
+              message: message,
+            );
+          },
+        );
+      },
+    ).whenComplete(() => _activeQuotaSheetFuture = null);
+
+    _activeQuotaSheetFuture = future;
+    return future;
+  }
+
+  Future<void> showQuotaExceededSheetPreview({
+    String message =
+        'Storage quota exceeded. Free up space or upgrade your quota and try again.',
+  }) {
+    return _showQuotaExceededSheet(message: message);
+  }
+
+  Future<T> _guardUploadQuotaExceeded<T>(Future<T> Function() action) async {
+    try {
+      return await action();
+    } on DioException catch (err) {
+      if (_isQuotaExceededError(err)) {
+        final message = _buildQuotaExceededMessage(err);
+        unawaited(_showQuotaExceededSheet(message: message));
+        throw DriveQuotaExceededException(message);
+      }
+      rethrow;
+    }
+  }
 
   List<Map<String, dynamic>> _extractChildrenPayload(dynamic responseData) {
     if (responseData is List) {
@@ -407,7 +637,7 @@ class FileUploader {
     return const [];
   }
 
-  Future<String?> _resolveParentIdFromPath({
+  Future<String?> resolveParentIdFromPath({
     String? path,
     String? poolId,
   }) async {
@@ -427,9 +657,7 @@ class FileUploader {
           : '/drive/files/$parentId/children';
       final response = await _client.get(
         endpoint,
-        queryParameters: {
-          'pool': ?poolId,
-        },
+        queryParameters: {'pool': ?poolId},
       );
 
       final children = _extractChildrenPayload(response.data);
@@ -500,13 +728,11 @@ class FileUploader {
     required String fileName,
     required String contentType,
     String? poolId,
-    String? bundleId,
     String? expiredAt,
     String? parentId,
     String? path,
-    String? encryptionScheme,
-    String? encryptionHeader,
-    String? encryptionSignature,
+    String? usage,
+    String? applicationType,
     ProgressCallback? onSendProgress,
   }) async {
     late final Uint8List bytes;
@@ -537,37 +763,37 @@ class FileUploader {
         filename: multipartFileName,
         contentType: multipartContentType,
       ),
-      'poolId': poolId,
+      'pool_id': poolId,
       'parent_id':
-          parentId ?? await _resolveParentIdFromPath(path: path, poolId: poolId),
-      'bundleId': bundleId,
-      'expiredAt': expiredAt,
+          parentId ?? await resolveParentIdFromPath(path: path, poolId: poolId),
+      'expired_at': expiredAt,
+      'usage': usage,
+      'application_type': applicationType,
     };
 
-    if (encryptionScheme != null && encryptionScheme.isNotEmpty) {
-      payload['encryptionScheme'] = encryptionScheme;
-      payload['encryptionHeader'] = encryptionHeader;
-      payload['encryptionSignature'] = encryptionSignature;
-    }
     payload.removeWhere((_, value) => value == null);
 
-    final response = await _client.post(
-      '/drive/files/upload/direct',
-      data: FormData.fromMap(payload),
-      onSendProgress: onSendProgress,
-      options: Options(
-        sendTimeout: const Duration(minutes: 5),
-        receiveTimeout: const Duration(minutes: 5),
-      ),
-    );
+    return _guardUploadQuotaExceeded(() async {
+      final response = await _client.post(
+        '/drive/files/upload/direct',
+        data: FormData.fromMap(payload),
+        onSendProgress: onSendProgress,
+        options: Options(
+          sendTimeout: const Duration(minutes: 5),
+          receiveTimeout: const Duration(minutes: 5),
+        ),
+      );
 
-    if (response.data is! Map) {
-      throw const FormatException('Unexpected direct upload response payload.');
-    }
+      if (response.data is! Map) {
+        throw const FormatException(
+          'Unexpected direct upload response payload.',
+        );
+      }
 
-    return _parseUploadedFileResponse(
-      Map<String, dynamic>.from(response.data as Map),
-    );
+      return _parseUploadedFileResponse(
+        Map<String, dynamic>.from(response.data as Map),
+      );
+    });
   }
 
   /// Calculates the MD5 hash of file bytes.
@@ -618,15 +844,12 @@ class FileUploader {
     required String fileName,
     required String contentType,
     String? poolId,
-    String? bundleId,
-    String? encryptPassword,
-    String? encryptionScheme,
-    String? encryptionHeader,
-    String? encryptionSignature,
     String? expiredAt,
     int? chunkSize,
     String? parentId,
     String? path,
+    String? usage,
+    String? applicationType,
   }) async {
     final stepTimer = Stopwatch()..start();
 
@@ -645,51 +868,31 @@ class FileUploader {
     debugPrint(
       '[DriveUpload] Hash calculation took: ${stepTimer.elapsedMilliseconds}ms',
     );
-
-    if (encryptionScheme != null &&
-        encryptionScheme.isNotEmpty &&
-        (encryptionHeader == null || encryptionHeader.isEmpty)) {
-      throw const FormatException(
-        'encryption_header is required when encryption_scheme is set.',
-      );
-    }
-    if (encryptionHeader != null &&
-        !DriveE2eeFileEnvelope._isValidBase64(encryptionHeader)) {
-      throw const FormatException('encryption_header must be valid base64.');
-    }
-    if (encryptionSignature != null &&
-        !DriveE2eeFileEnvelope._isValidBase64(encryptionSignature)) {
-      throw const FormatException('encryption_signature must be valid base64.');
-    }
-
     final payload = <String, dynamic>{
       'hash': hash,
       'file_name': fileName,
       'file_size': fileSize,
       'content_type': contentType,
       'pool_id': poolId,
-      'bundle_id': bundleId,
       'expired_at': expiredAt,
       'chunk_size': chunkSize,
       'parent_id':
-          parentId ?? await _resolveParentIdFromPath(path: path, poolId: poolId),
+          parentId ?? await resolveParentIdFromPath(path: path, poolId: poolId),
+      'usage': usage,
+      'application_type': applicationType,
     };
-
-    if (encryptionScheme != null && encryptionScheme.isNotEmpty) {
-      payload['encryption_scheme'] = encryptionScheme;
-      payload['encryption_header'] = encryptionHeader;
-      payload['encryption_signature'] = encryptionSignature;
-    }
 
     stepTimer
       ..reset()
       ..start();
-    final response = await _client.post(
-      '/drive/files/upload/create',
-      data: payload,
-      options: Options(
-        sendTimeout: const Duration(minutes: 2),
-        receiveTimeout: const Duration(minutes: 2),
+    final response = await _guardUploadQuotaExceeded(
+      () => _client.post(
+        '/drive/files/upload/create',
+        data: payload,
+        options: Options(
+          sendTimeout: const Duration(minutes: 2),
+          receiveTimeout: const Duration(minutes: 2),
+        ),
       ),
     );
     stepTimer.stop();
@@ -715,13 +918,15 @@ class FileUploader {
       ),
     });
 
-    await _client.post(
-      '/drive/files/upload/chunk/$taskId/$chunkIndex',
-      data: formData,
-      onSendProgress: onSendProgress,
-      options: Options(
-        sendTimeout: const Duration(minutes: 2),
-        receiveTimeout: const Duration(minutes: 2),
+    await _guardUploadQuotaExceeded(
+      () => _client.post(
+        '/drive/files/upload/chunk/$taskId/$chunkIndex',
+        data: formData,
+        onSendProgress: onSendProgress,
+        options: Options(
+          sendTimeout: const Duration(minutes: 2),
+          receiveTimeout: const Duration(minutes: 2),
+        ),
       ),
     );
     stepTimer.stop();
@@ -731,11 +936,13 @@ class FileUploader {
   }
 
   Future<Map<String, dynamic>> getUploadProgress(String taskId) async {
-    final response = await _client.get(
-      '/drive/files/upload/progress/$taskId',
-      options: Options(
-        sendTimeout: const Duration(seconds: 30),
-        receiveTimeout: const Duration(seconds: 30),
+    final response = await _guardUploadQuotaExceeded(
+      () => _client.get(
+        '/drive/files/upload/progress/$taskId',
+        options: Options(
+          sendTimeout: const Duration(seconds: 30),
+          receiveTimeout: const Duration(seconds: 30),
+        ),
       ),
     );
     return Map<String, dynamic>.from(response.data);
@@ -766,11 +973,13 @@ class FileUploader {
   /// Completes the upload and returns the CloudFile object.
   Future<SnCloudFile> completeUpload(String taskId) async {
     final stepTimer = Stopwatch()..start();
-    final response = await _client.post(
-      '/drive/files/upload/complete/$taskId',
-      options: Options(
-        sendTimeout: const Duration(minutes: 5),
-        receiveTimeout: const Duration(minutes: 5),
+    final response = await _guardUploadQuotaExceeded(
+      () => _client.post(
+        '/drive/files/upload/complete/$taskId',
+        options: Options(
+          sendTimeout: const Duration(minutes: 5),
+          receiveTimeout: const Duration(minutes: 5),
+        ),
       ),
     );
     stepTimer.stop();
@@ -832,6 +1041,8 @@ class FileUploader {
     int? customChunkSize,
     String? parentId,
     String? path,
+    String? usage,
+    String? applicationType,
     Function(double? progress, Duration estimate)? onProgress,
   }) async {
     final overallTimer = Stopwatch()..start();
@@ -880,13 +1091,11 @@ class FileUploader {
         fileName: fileName,
         contentType: contentType,
         poolId: poolId,
-        bundleId: bundleId,
         expiredAt: expiredAt,
         parentId: parentId,
         path: path,
-        encryptionScheme: encryptionScheme,
-        encryptionHeader: encryptionHeader,
-        encryptionSignature: encryptionSignature,
+        usage: usage,
+        applicationType: applicationType,
         onSendProgress: (sent, total) {
           if (total > 0) {
             onProgress?.call(sent / total, Duration.zero);
@@ -918,15 +1127,12 @@ class FileUploader {
       fileName: fileName,
       contentType: contentType,
       poolId: poolId,
-      bundleId: bundleId,
-      encryptPassword: encryptPassword,
-      encryptionScheme: encryptionScheme,
-      encryptionHeader: encryptionHeader,
-      encryptionSignature: encryptionSignature,
       expiredAt: expiredAt,
       chunkSize: customChunkSize,
       parentId: parentId,
       path: path,
+      usage: usage,
+      applicationType: applicationType,
     );
     createTimer.stop();
     debugPrint(
@@ -1059,6 +1265,8 @@ class FileUploader {
     String? path,
     String? encryptPassword,
     FileUploadMode? mode,
+    String? usage,
+    String? applicationType,
     Function(double? progress, Duration estimate)? onProgress,
   }) {
     final completer = Completer<SnCloudFile?>();
@@ -1101,6 +1309,8 @@ class FileUploader {
                 encryptPassword,
                 onProgress,
                 completer,
+                usage: usage,
+                applicationType: applicationType,
               ),
             )
             .catchError((e) {
@@ -1113,6 +1323,8 @@ class FileUploader {
                 encryptPassword,
                 onProgress,
                 completer,
+                usage: usage,
+                applicationType: applicationType,
               );
             });
 
@@ -1128,6 +1340,8 @@ class FileUploader {
       encryptPassword,
       onProgress,
       completer,
+      usage: usage,
+      applicationType: applicationType,
     );
     return completer;
   }
@@ -1140,8 +1354,10 @@ class FileUploader {
     String? path,
     String? encryptPassword,
     Function(double? progress, Duration estimate)? onProgress,
-    Completer<SnCloudFile?> completer,
-  ) {
+    Completer<SnCloudFile?> completer, {
+    String? usage,
+    String? applicationType,
+  }) {
     String actualMimetype = getMimeType(fileData);
     String actualFilename = fileData.displayName ?? 'randomly_file';
     Uint8List? bytes;
@@ -1160,6 +1376,8 @@ class FileUploader {
         poolId: poolId,
         onProgress: onProgress,
         completer: completer,
+        usage: usage,
+        applicationType: applicationType,
       );
       return completer;
     } else if (data is List<int> || data is Uint8List) {
@@ -1189,6 +1407,8 @@ class FileUploader {
         poolId: poolId,
         onProgress: onProgress,
         completer: completer,
+        usage: usage,
+        applicationType: applicationType,
       );
     }
 
@@ -1204,6 +1424,8 @@ class FileUploader {
     String? parentId,
     String? path,
     String? encryptPassword,
+    String? usage,
+    String? applicationType,
     Function(double? progress, Duration estimate)? onProgress,
     required Completer<SnCloudFile?> completer,
   }) {
@@ -1221,6 +1443,8 @@ class FileUploader {
           parentId: parentId,
           path: path,
           encryptPassword: encryptPassword,
+          usage: usage,
+          applicationType: applicationType,
           onProgress: onProgress,
         )
         .then((result) {
@@ -1261,10 +1485,58 @@ class FileUploader {
     } else if (data is List<int> || data is Uint8List) {
       return 'application/octet-stream';
     } else if (data is SnCloudFile) {
-      return data.mimeType ?? 'application/octet-stream';
+      return data.mimeType;
     } else {
       throw ArgumentError('Invalid file data type');
     }
+  }
+
+  // =========================================================================
+  // File management operations
+  // =========================================================================
+
+  /// Updates the file's display name. Owner only.
+  Future<SnCloudFile> renameFile(String fileId, String newName) {
+    return _driveApi.updateFileName(fileId, newName);
+  }
+
+  /// Moves a file to a different folder or to root. Owner only.
+  Future<SnCloudFile> moveFile(
+    String fileId, {
+    String? parentId,
+    bool? indexed,
+  }) {
+    return _driveApi.moveFile(fileId, parentId: parentId, indexed: indexed);
+  }
+
+  /// Permanently deletes a file. Owner only.
+  Future<SnCloudFile> deleteFile(String fileId) {
+    return _driveApi.deleteFile(fileId);
+  }
+
+  /// Deletes multiple files at once. Owner only.
+  Future<int> batchDeleteFiles(List<String> fileIds) {
+    return _driveApi.batchDeleteFiles(fileIds);
+  }
+
+  /// Creates a new virtual folder.
+  Future<SnCloudFile> createFolder({required String name, String? parentId}) {
+    return _driveApi.createFolder(name: name, parentId: parentId);
+  }
+
+  /// Sets content sensitivity labels. Owner only.
+  Future<SnCloudFile> updateSensitiveMarks(String fileId, List<String> marks) {
+    return _driveApi.updateSensitiveMarks(fileId, marks);
+  }
+
+  /// Sets arbitrary user-defined metadata. Owner only.
+  Future<SnCloudFile> updateUserMeta(String fileId, Map<String, dynamic> meta) {
+    return _driveApi.updateUserMeta(fileId, meta);
+  }
+
+  /// Permanently deletes all recycled files for the current user.
+  Future<int> deleteRecycledFiles() {
+    return _driveApi.deleteRecycledFiles();
   }
 }
 
@@ -1272,13 +1544,14 @@ enum FileUploadMode { generic, mediaSafe }
 
 class FileDownloadService {
   final Ref ref;
+  late final _driveApi = ref.read(solarNetworkClientProvider).drive;
 
   FileDownloadService(this.ref);
 
   String _getFileExtension(SnCloudFile item) {
     var extName = extension(item.name).trim();
     if (extName.isEmpty) {
-      extName = item.mimeType?.split('/').lastOrNull ?? 'jpeg';
+      extName = item.mimeType.split('/').lastOrNull ?? 'jpeg';
     }
     return extName.replaceFirst('.', '');
   }
@@ -1317,10 +1590,10 @@ class FileDownloadService {
   }
 
   String _getOriginalUrl(SnCloudFile item, {String? serverUrl}) {
-    if (serverUrl != null && item.url == null) {
+    if (serverUrl != null && item.storageUrl == null) {
       return '$serverUrl/drive/files/${item.id}?original=true';
     }
-    final baseUri = item.url ?? '/drive/files/${item.id}';
+    final baseUri = item.storageUrl ?? '/drive/files/${item.id}';
     return baseUri.contains('?')
         ? '$baseUri&original=true'
         : '$baseUri?original=true';
@@ -1348,14 +1621,13 @@ class FileDownloadService {
       return filePath;
     }
 
-    final client = ref.read(solarNetworkClientProvider).dio;
     final tempDir = await getTemporaryDirectory();
     final filePath = '${tempDir.path}/${item.id}.$extName';
 
-    await client.download(
-      '/drive/files/${item.id}',
-      filePath,
-      queryParameters: {'original': true},
+    await _driveApi.downloadFile(
+      fileId: item.id,
+      savePath: filePath,
+      original: true,
     );
     await _tryDecryptDownloadedFile(filePath, item);
 
@@ -1370,7 +1642,7 @@ class FileDownloadService {
       final filePath = await _downloadToTemp(item, extName);
 
       if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
-        await Gal.putImage(filePath, album: 'Dynamic Network');
+        await Gal.putImage(filePath, album: 'Solar Network');
         showSnackBar('Image saved to gallery');
       } else {
         await FileSaver.instance.saveFile(
@@ -1411,15 +1683,14 @@ class FileDownloadService {
     try {
       showSnackBar('Downloading file...');
 
-      final client = ref.read(solarNetworkClientProvider).dio;
       final extName = _getFileExtension(item);
       final tempDir = await getTemporaryDirectory();
       final filePath = '${tempDir.path}/${item.id}.$extName';
 
-      await client.download(
-        '/drive/files/${item.id}',
-        filePath,
-        queryParameters: {'original': true},
+      await _driveApi.downloadFile(
+        fileId: item.id,
+        savePath: filePath,
+        original: true,
         onReceiveProgress: (count, total) {
           onProgress?.call(count, total);
           if (total > 0) {

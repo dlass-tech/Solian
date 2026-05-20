@@ -38,6 +38,7 @@ export 'src/models/drive/file.dart';
 export 'src/models/drive/file_list_item.dart';
 export 'src/models/drive/file_pool.dart';
 export 'src/models/drive/folder.dart';
+export 'src/models/drive/file_permission.dart';
 
 // Live models
 export 'src/models/live/livestream.dart';
@@ -46,6 +47,7 @@ export 'src/models/live/livestream.dart';
 export 'src/models/posts/embed.dart';
 export 'src/models/posts/heatmap.dart';
 export 'src/models/posts/poll.dart';
+export 'src/models/posts/post_collection.dart';
 export 'src/models/posts/post.dart';
 export 'src/models/posts/post_category.dart';
 export 'src/models/posts/post_tag.dart';

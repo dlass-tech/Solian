@@ -45,13 +45,21 @@ sealed class SnPost with _$SnPost {
     int? fediverseType,
     @Default(true) bool isCached,
     @Default(0) int contentType,
-    @Default([]) List<SnCloudFile> attachments,
+    @Default([]) List<SnCloudFileReference> attachments,
     @Default({}) Map<String, int> reactionsCount,
     @Default({}) Map<String, bool> reactionsMade,
     @Default([]) List<dynamic> reactions,
     @Default([]) List<SnPostTag> tags,
     @Default([]) List<SnPostCategory> categories,
+    // Legacy/unspecified collections field.
+    // Prefer using [publisherCollections] for post-collection integration.
     @Default([]) List<dynamic> collections,
+
+    // Collections owned by the same publisher as the post.
+    // Wire format: `publisher_collections`.
+    @JsonKey(name: 'publisher_collections')
+    @Default([])
+    List<SnPostCollection> publisherCollections,
     @Default([]) List<SnPostFeaturedRecord> featuredRecords,
     @Default(null) DateTime? createdAt,
     @Default(null) DateTime? updatedAt,
@@ -61,6 +69,7 @@ sealed class SnPost with _$SnPost {
     @Default(false) bool isTruncated,
     @Default(null) SnActivityPubActor? boostedBy,
     @Default(null) DateTime? boostedAt,
+    @Default(false) bool isBookmarked,
   }) = _SnPost;
 
   factory SnPost.fromJson(Map<String, dynamic> json) => _$SnPostFromJson(json);
@@ -169,11 +178,38 @@ sealed class SnPostReaction with _$SnPostReaction {
     SnActivityPubActor? actor,
     String? accountId,
     SnAccount? account,
+    bool? isLocal,
+    String? fediverseUri,
     DateTime? deletedAt,
   }) = _SnPostReaction;
 
   factory SnPostReaction.fromJson(Map<String, dynamic> json) =>
       _$SnPostReactionFromJson(json);
+}
+
+@freezed
+sealed class SnPostBookmark with _$SnPostBookmark {
+  const factory SnPostBookmark({
+    required String id,
+    required String postId,
+    required String accountId,
+    @Default(null) DateTime? createdAt,
+    @Default(null) DateTime? updatedAt,
+  }) = _SnPostBookmark;
+
+  factory SnPostBookmark.fromJson(Map<String, dynamic> json) =>
+      _$SnPostBookmarkFromJson(json);
+}
+
+@freezed
+sealed class UserReactionListingItem with _$UserReactionListingItem {
+  const factory UserReactionListingItem({
+    required SnPostReaction reaction,
+    required SnPost post,
+  }) = _UserReactionListingItem;
+
+  factory UserReactionListingItem.fromJson(Map<String, dynamic> json) =>
+      _$UserReactionListingItemFromJson(json);
 }
 
 @freezed

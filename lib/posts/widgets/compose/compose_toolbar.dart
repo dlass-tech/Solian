@@ -7,6 +7,7 @@ import 'package:island/posts/widgets/compose/compose_embed_sheet.dart';
 import 'package:island/posts/widgets/compose/compose_fitness_sheet.dart';
 import 'package:island/posts/widgets/compose/compose_shared.dart';
 import 'package:island/posts/widgets/compose/draft_manager.dart';
+import 'package:island/stickers/widgets/stickers/sticker_picker.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:styled_widget/styled_widget.dart';
 import 'package:solar_network_sdk/solar_network_sdk.dart';
@@ -27,6 +28,43 @@ class ComposeToolbar extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    void insertPlaceholder(String placeholder) {
+      final text = state.contentController.text;
+      final selection = state.contentController.selection;
+      final start = selection.start >= 0 ? selection.start : text.length;
+      final end = selection.end >= 0 ? selection.end : text.length;
+      final newText = text.replaceRange(start, end, placeholder);
+      state.contentController.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(offset: start + placeholder.length),
+      );
+    }
+
+    void showStickerPicker() {
+      final buttonContext = context;
+      final box = buttonContext.findRenderObject() as RenderBox?;
+      final rawOffset = box?.localToGlobal(Offset.zero) ?? Offset.zero;
+      final screenHeight = MediaQuery.of(context).size.height;
+      const popoverHeight = 480.0;
+      final offset = Offset(
+        rawOffset.dx,
+        rawOffset.dy + popoverHeight > screenHeight
+            ? (rawOffset.dy - popoverHeight - 16).clamp(16.0, screenHeight)
+            : rawOffset.dy,
+      );
+
+      showStickerPickerPopover(
+        context,
+        offset,
+        onPick: (pack, sticker) {
+          insertPlaceholder(':${pack.prefix}+${sticker.slug}:');
+        },
+        onLongPress: (pack, sticker) {
+          insertPlaceholder(':${pack.prefix}+${sticker.slug}:');
+        },
+      );
+    }
+
     void pickPhotoMedia() async {
       final oldCount = state.attachments.value.length;
       await ComposeLogic.pickPhotoMedia(ref, state);
@@ -105,6 +143,14 @@ class ComposeToolbar extends HookConsumerWidget {
       );
     }
 
+    void pickLocation() {
+      ComposeLogic.pickLocation(ref, state, context);
+    }
+
+    void pickMeet() {
+      ComposeLogic.pickMeet(ref, state, context);
+    }
+
     void showDraftManager() {
       showModalBottomSheet(
         context: context,
@@ -154,6 +200,12 @@ class ComposeToolbar extends HookConsumerWidget {
                       child: Row(
                         children: [
                           UploadMenu(items: uploadMenuItems),
+                          IconButton(
+                            onPressed: showStickerPicker,
+                            icon: const Icon(Symbols.sticky_note_2),
+                            tooltip: 'stickers'.tr(),
+                            color: colorScheme.primary,
+                          ),
                           IconButton(
                             onPressed: linkAttachment,
                             icon: const Icon(Symbols.attach_file),
@@ -231,6 +283,52 @@ class ComposeToolbar extends HookConsumerWidget {
                                 style: ButtonStyle(
                                   backgroundColor: WidgetStatePropertyAll(
                                     state.fitnessReference.value != null
+                                        ? colorScheme.primary.withOpacity(0.15)
+                                        : null,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                          // Location button with visual state when location is set
+                          ListenableBuilder(
+                            listenable: Listenable.merge([
+                              state.locationName,
+                              state.locationAddress,
+                              state.locationWkt,
+                            ]),
+                            builder: (context, _) {
+                              final hasLocation =
+                                  state.locationName.value != null ||
+                                  state.locationAddress.value != null ||
+                                  state.locationWkt.value != null;
+                              return IconButton(
+                                onPressed: pickLocation,
+                                icon: const Icon(Symbols.location_on),
+                                tooltip: 'location'.tr(),
+                                color: colorScheme.primary,
+                                style: ButtonStyle(
+                                  backgroundColor: WidgetStatePropertyAll(
+                                    hasLocation
+                                        ? colorScheme.primary.withOpacity(0.15)
+                                        : null,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                          // Meet button with visual state when a meet is linked
+                          ListenableBuilder(
+                            listenable: state.meetId,
+                            builder: (context, _) {
+                              return IconButton(
+                                onPressed: pickMeet,
+                                icon: const Icon(Symbols.groups),
+                                tooltip: 'meet'.tr(),
+                                color: colorScheme.primary,
+                                style: ButtonStyle(
+                                  backgroundColor: WidgetStatePropertyAll(
+                                    state.meetId.value != null
                                         ? colorScheme.primary.withOpacity(0.15)
                                         : null,
                                   ),

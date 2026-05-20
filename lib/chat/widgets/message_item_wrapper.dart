@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:island/chat/pods/chat_room_state.dart';
 import 'package:island/chat/widgets/message_item.dart';
 import 'package:island/data/message.dart';
 import 'package:solar_network_sdk/solar_network_sdk.dart';
@@ -23,15 +24,15 @@ class AnimatedMessagesNotifier extends Notifier<Set<String>> {
 class MessageItemWrapper extends HookConsumerWidget {
   final LocalChatMessage message;
   final int index;
+  final String roomId;
   final bool isLastInGroup;
-  final bool isSelectionMode;
-  final Set<String> selectedMessages;
+  final bool showBubbleAvatar;
+  final bool showColumnAvatar;
   final AsyncValue<SnChatMember?> chatIdentity;
   final VoidCallback toggleSelectionMode;
   final Function(String) toggleMessageSelection;
   final Function(String, LocalChatMessage) onMessageAction;
   final Function(String) onJump;
-  final Map<String, Map<int, double?>> attachmentProgress;
   final bool disableAnimation;
   final DateTime roomOpenTime;
 
@@ -39,35 +40,30 @@ class MessageItemWrapper extends HookConsumerWidget {
     super.key,
     required this.message,
     required this.index,
+    required this.roomId,
     required this.isLastInGroup,
-    required this.isSelectionMode,
-    required this.selectedMessages,
+    this.showBubbleAvatar = true,
+    this.showColumnAvatar = true,
     required this.chatIdentity,
     required this.toggleSelectionMode,
     required this.toggleMessageSelection,
     required this.onMessageAction,
     required this.onJump,
-    required this.attachmentProgress,
     required this.disableAnimation,
     required this.roomOpenTime,
   });
 
-  Widget _buildContent(BuildContext context, SnChatMember? identity) {
-    final isSelected = selectedMessages.contains(message.id);
+  Widget _buildContent(
+    BuildContext context,
+    SnChatMember? identity, {
+    required bool isSelectionMode,
+    required bool isSelected,
+    required Map<int, double?>? progress,
+  }) {
+    final stableMessageKey = message.clientMessageId ?? message.id;
     final isCurrentUser = identity?.id == message.senderId;
 
     return GestureDetector(
-      onLongPress: () {
-        if (!isSelectionMode) {
-          toggleSelectionMode();
-          toggleMessageSelection(message.id);
-        }
-      },
-      onTap: () {
-        if (isSelectionMode) {
-          toggleMessageSelection(message.id);
-        }
-      },
       child: Container(
         color: isSelected
             ? Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3)
@@ -77,15 +73,17 @@ class MessageItemWrapper extends HookConsumerWidget {
             MessageItem(
               // If animation is disabled, we might want to pass a key to maintain state?
               // But here we are inside the wrapper.
-              key: ValueKey('item-${message.id}'),
+              key: ValueKey('item-$stableMessageKey'),
               message: message,
               isCurrentUser: isCurrentUser,
               onAction: isSelectionMode
                   ? null
                   : (action) => onMessageAction(action, message),
               onJump: onJump,
-              progress: attachmentProgress[message.id],
+              progress: progress,
               showAvatar: isLastInGroup,
+              showBubbleAvatar: showBubbleAvatar,
+              showColumnAvatar: showColumnAvatar,
               isSelectionMode: isSelectionMode,
               isSelected: isSelected,
               onToggleSelection: toggleMessageSelection,
@@ -132,8 +130,22 @@ class MessageItemWrapper extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     // Animation logic
     final animatedMessages = ref.watch(animatedMessagesProvider);
+    final isSelectionMode = ref.watch(
+      chatRoomStateProvider(roomId).select((state) => state.isSelectionMode),
+    );
+    final isSelected = ref.watch(
+      chatRoomStateProvider(
+        roomId,
+      ).select((state) => state.selectedMessageIds.contains(message.id)),
+    );
+    final progress = ref.watch(
+      chatRoomStateProvider(
+        roomId,
+      ).select((state) => state.attachmentProgress[message.id]),
+    );
+    final stableMessageKey = message.clientMessageId ?? message.id;
     final isNewMessage = message.createdAt.isAfter(roomOpenTime);
-    final hasAnimated = animatedMessages.contains(message.id);
+    final hasAnimated = animatedMessages.contains(stableMessageKey);
 
     // Only animate if:
     // 1. Animation is enabled
@@ -143,7 +155,13 @@ class MessageItemWrapper extends HookConsumerWidget {
 
     final child = chatIdentity.when(
       skipError: true,
-      data: (identity) => _buildContent(context, identity),
+      data: (identity) => _buildContent(
+        context,
+        identity,
+        isSelectionMode: isSelectionMode,
+        isSelected: isSelected,
+        progress: progress,
+      ),
       loading: () => _buildLoading(),
       error: (_, _) => const SizedBox.shrink(),
     );
@@ -159,7 +177,9 @@ class MessageItemWrapper extends HookConsumerWidget {
         hasStarted.value = true;
         controller.forward().then((_) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            ref.read(animatedMessagesProvider.notifier).addMessage(message.id);
+            ref
+                .read(animatedMessagesProvider.notifier)
+                .addMessage(stableMessageKey);
           });
         });
       }

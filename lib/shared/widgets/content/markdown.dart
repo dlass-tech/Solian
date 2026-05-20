@@ -10,8 +10,8 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:island/accounts/screens/profile.dart';
-import 'package:island/core/config.dart';
-import 'package:island/shared/widgets/content/image.dart';
+import 'package:island/core/network.dart';
+import 'package:island/shared/widgets/content/markdown_remote_image.dart';
 import 'package:island/posts/screens/publisher_profile.dart';
 import 'package:island/shared/widgets/alert.dart';
 import 'package:island/drive/widgets/cloud_files.dart';
@@ -23,6 +23,66 @@ import 'package:markdown_widget/markdown_widget.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:styled_widget/styled_widget.dart';
 import 'package:solar_network_sdk/solar_network_sdk.dart';
+import 'package:island/stickers/models/sticker.dart';
+
+final _stickerLookupCache = <String, SnSticker>{};
+
+final stickerLookupProvider = FutureProvider.family<SnSticker?, String>((
+  ref,
+  identifier,
+) async {
+  final key = identifier.trim();
+  if (key.isEmpty) return null;
+
+  final cached = _stickerLookupCache[key];
+  if (cached != null) return cached;
+
+  try {
+    final client = ref.watch(apiClientProvider);
+    final response = await client.get(
+      '/sphere/stickers/lookup/${Uri.encodeComponent(key)}',
+    );
+    final sticker = SnSticker.fromJson(
+      Map<String, dynamic>.from(response.data as Map),
+    );
+    _stickerLookupCache[key] = sticker;
+    _stickerLookupCache[sticker.id] = sticker;
+    return sticker;
+  } catch (_) {
+    return null;
+  }
+});
+
+final _stickerParagraphCache = <String, bool>{};
+
+bool _isStandaloneStickerInContent(String content, String placeholder) {
+  final cached = _stickerParagraphCache['$content::$placeholder'];
+  if (cached != null) return cached;
+
+  final paragraphMatches = RegExp(
+    r'(?:^|\n\s*\n)(.*?)(?=\n\s*\n|$)',
+    dotAll: true,
+  ).allMatches(content);
+  for (final match in paragraphMatches) {
+    final paragraph = match.group(1)?.trim() ?? '';
+    if (paragraph.isEmpty) continue;
+
+    final stickers = RegExp(
+      MarkdownTextContent.stickerRegex,
+    ).allMatches(paragraph).map((m) => m.group(1)!).toList();
+    if (stickers.contains(placeholder)) {
+      final nonSticker = paragraph
+          .replaceAll(RegExp(MarkdownTextContent.stickerRegex), '')
+          .trim();
+      final standalone = stickers.length == 1 && nonSticker.isEmpty;
+      _stickerParagraphCache['$content::$placeholder'] = standalone;
+      return standalone;
+    }
+  }
+
+  _stickerParagraphCache['$content::$placeholder'] = false;
+  return false;
+}
 
 class MarkdownTextContent extends HookConsumerWidget {
   static const String stickerRegex = r':([-\w]*\+[-\w]*):';
@@ -33,7 +93,7 @@ class MarkdownTextContent extends HookConsumerWidget {
   final TextStyle? linkStyle;
   final EdgeInsets? linesMargin;
   final bool isSelectable;
-  final List<SnCloudFile>? attachments;
+  final List<IDisplayableCloudFile>? attachments;
   final List<markdown.InlineSyntax> extraInlineSyntaxList;
   final List<markdown.BlockSyntax> extraBlockSyntaxList;
   final List<dynamic> extraGenerators;
@@ -56,18 +116,6 @@ class MarkdownTextContent extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final doesEnlargeSticker = useMemoized(() {
-      // Check if content only contains one sticker by matching the sticker pattern
-      final stickerPattern = RegExp(stickerRegex);
-      final matches = stickerPattern.allMatches(content);
-
-      // Content should only contain one sticker and nothing else (except whitespace)
-      final contentWithoutStickers = content
-          .replaceAll(stickerPattern, '')
-          .trim();
-      return matches.length == 1 && contentWithoutStickers.isEmpty;
-    }, [content]);
-
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final config = isDark
         ? MarkdownConfig.darkConfig
@@ -91,19 +139,14 @@ class MarkdownTextContent extends HookConsumerWidget {
     final spoilerRevealed = useState(false);
 
     final spoilerGenerator = SpoilerGenerator(
-      backgroundColor: Theme.of(context).colorScheme.tertiary,
-      foregroundColor: Theme.of(context).colorScheme.onTertiary,
-      outlineColor: Theme.of(context).colorScheme.outline,
       revealed: spoilerRevealed.value,
       onToggle: () => spoilerRevealed.value = !spoilerRevealed.value,
     );
 
-    final baseUrl = ref.watch(serverUrlProvider);
     final stickerGenerator = StickerGenerator(
       backgroundColor: Theme.of(context).colorScheme.primary,
       foregroundColor: Theme.of(context).colorScheme.onPrimary,
-      isEnlarged: doesEnlargeSticker,
-      baseUrl: baseUrl,
+      content: content,
     );
 
     return MarkdownBlock(
@@ -209,17 +252,7 @@ class MarkdownTextContent extends HookConsumerWidget {
                     );
                 }
               }
-              final content = ClipRRect(
-                borderRadius: const BorderRadius.all(Radius.circular(8)),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(maxHeight: 360),
-                  child: UniversalImage(
-                    uri: uri.toString(),
-                    fit: BoxFit.contain,
-                  ),
-                ),
-              );
-              return content;
+              return MarkdownRemoteImage(uri: uri);
             },
           ),
         ],
@@ -582,45 +615,31 @@ class HighlightSpanNode extends SpanNode {
 }
 
 class SpoilerGenerator extends SpanNodeGeneratorWithTag {
-  SpoilerGenerator({
-    required Color backgroundColor,
-    required Color foregroundColor,
-    required Color outlineColor,
-    required bool revealed,
-    required VoidCallback onToggle,
-  }) : super(
-         tag: 'spoiler',
-         generator:
-             (
-               markdown.Element element,
-               MarkdownConfig config,
-               WidgetVisitor visitor,
-             ) {
-               return SpoilerSpanNode(
-                 text: element.textContent,
-                 backgroundColor: backgroundColor,
-                 foregroundColor: foregroundColor,
-                 outlineColor: outlineColor,
-                 revealed: revealed,
-                 onToggle: onToggle,
-               );
-             },
-       );
+  SpoilerGenerator({required bool revealed, required VoidCallback onToggle})
+    : super(
+        tag: 'spoiler',
+        generator:
+            (
+              markdown.Element element,
+              MarkdownConfig config,
+              WidgetVisitor visitor,
+            ) {
+              return SpoilerSpanNode(
+                text: element.textContent,
+                revealed: revealed,
+                onToggle: onToggle,
+              );
+            },
+      );
 }
 
 class SpoilerSpanNode extends SpanNode {
   final String text;
-  final Color backgroundColor;
-  final Color foregroundColor;
-  final Color outlineColor;
   final bool revealed;
   final VoidCallback onToggle;
 
   SpoilerSpanNode({
     required this.text,
-    required this.backgroundColor,
-    required this.foregroundColor,
-    required this.outlineColor,
     required this.revealed,
     required this.onToggle,
   });
@@ -628,54 +647,81 @@ class SpoilerSpanNode extends SpanNode {
   @override
   InlineSpan build() {
     return WidgetSpan(
-      child: InkWell(
-        onTap: onToggle,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-          decoration: BoxDecoration(
-            color: revealed ? Colors.transparent : backgroundColor,
-            border: revealed ? Border.all(color: outlineColor, width: 1) : null,
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: revealed
-              ? Row(
-                  spacing: 6,
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Symbols.visibility, size: 18).padding(top: 1),
-                    Flexible(child: Text(text)),
-                  ],
-                )
-              : Row(
-                  spacing: 6,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Symbols.visibility_off,
-                      color: foregroundColor,
-                      size: 18,
-                    ),
-                    Flexible(
-                      child: Text(
-                        'spoiler',
-                        style: TextStyle(color: foregroundColor),
-                      ).tr(),
-                    ),
-                  ],
+      alignment: PlaceholderAlignment.middle,
+      child: Builder(
+        builder: (context) {
+          final baseStyle = DefaultTextStyle.of(context).style;
+          final spoilerBg = Colors.black;
+          final spoilerFg = Colors.white;
+          final spoilerSize = _measureInlineTextSize(context, text, baseStyle);
+
+          return InkWell(
+            onTap: onToggle,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 180),
+              switchInCurve: Curves.easeOut,
+              switchOutCurve: Curves.easeIn,
+              transitionBuilder: (child, animation) => FadeTransition(
+                opacity: animation,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0, 0.08),
+                    end: Offset.zero,
+                  ).animate(animation),
+                  child: child,
                 ),
-        ),
+              ),
+              child: revealed
+                  ? Text(text, key: const ValueKey('revealed'))
+                  : SizedBox(
+                      width: spoilerSize.width,
+                      height: spoilerSize.height,
+                      child: ColoredBox(
+                        color: spoilerBg,
+                        key: const ValueKey('hidden'),
+                        child: Center(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              'spoiler'.tr(),
+                              style: baseStyle.copyWith(
+                                color: spoilerFg,
+                                fontWeight: FontWeight.w600,
+                                fontSize: (baseStyle.fontSize ?? 14) * 0.82,
+                                letterSpacing: 0.2,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+            ),
+          );
+        },
       ),
     );
   }
+}
+
+Size _measureInlineTextSize(
+  BuildContext context,
+  String text,
+  TextStyle style,
+) {
+  final painter = TextPainter(
+    text: TextSpan(text: text, style: style),
+    textDirection: Directionality.of(context),
+    textScaler: MediaQuery.textScalerOf(context),
+    maxLines: 1,
+  )..layout();
+  return painter.size;
 }
 
 class StickerGenerator extends SpanNodeGeneratorWithTag {
   StickerGenerator({
     required Color backgroundColor,
     required Color foregroundColor,
-    required bool isEnlarged,
-    required String baseUrl,
+    required String content,
   }) : super(
          tag: 'sticker',
          generator:
@@ -688,62 +734,184 @@ class StickerGenerator extends SpanNodeGeneratorWithTag {
                  placeholder: element.textContent,
                  backgroundColor: backgroundColor,
                  foregroundColor: foregroundColor,
-                 isEnlarged: isEnlarged,
-                 baseUrl: baseUrl,
+                 isStandalone: _isStandaloneStickerInContent(
+                   content,
+                   element.textContent,
+                 ),
                );
              },
        );
+}
+
+enum _StickerRenderSize { small, medium, large }
+
+double _stickerRenderDimension(_StickerRenderSize size) => switch (size) {
+  _StickerRenderSize.small => 24,
+  _StickerRenderSize.medium => 48,
+  _StickerRenderSize.large => 96,
+};
+
+_StickerRenderSize _resolveStickerRenderSize(
+  SnSticker sticker,
+  bool isStandalone,
+) {
+  if (sticker.size != 0) {
+    return switch (sticker.size) {
+      1 => _StickerRenderSize.small,
+      2 => _StickerRenderSize.medium,
+      3 => _StickerRenderSize.large,
+      _ => _StickerRenderSize.medium,
+    };
+  }
+
+  if (sticker.mode == 1) {
+    return isStandalone ? _StickerRenderSize.medium : _StickerRenderSize.small;
+  }
+
+  return isStandalone ? _StickerRenderSize.large : _StickerRenderSize.medium;
 }
 
 class StickerSpanNode extends SpanNode {
   final String placeholder;
   final Color backgroundColor;
   final Color foregroundColor;
-  final bool isEnlarged;
-  final String baseUrl;
+  final bool isStandalone;
 
   StickerSpanNode({
     required this.placeholder,
     required this.backgroundColor,
     required this.foregroundColor,
-    required this.isEnlarged,
-    required this.baseUrl,
+    required this.isStandalone,
   });
 
   @override
   InlineSpan build() {
-    final size = isEnlarged ? 96.0 : 24.0;
-    final stickerUri = '$baseUrl/sphere/stickers/lookup/$placeholder/open';
-    // Parse placeholder to get pack prefix and sticker slug
-    final parts = placeholder.split('+');
-    final packPrefix = parts.isNotEmpty ? parts[0] : '';
-    final stickerCode = ':$placeholder:';
-
     return WidgetSpan(
       alignment: PlaceholderAlignment.middle,
       child: Builder(
         builder: (context) {
-          return InkWell(
-            onTap: () => showStickerPackSheet(context, packPrefix, stickerCode),
-            borderRadius: const BorderRadius.all(Radius.circular(8)),
-            child: ClipRRect(
-              borderRadius: const BorderRadius.all(Radius.circular(8)),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: backgroundColor.withOpacity(0.1),
-                  borderRadius: const BorderRadius.all(Radius.circular(8)),
-                ),
-                child: UniversalImage(
-                  uri: stickerUri,
-                  width: size,
-                  height: size,
-                  fit: BoxFit.contain,
-                  noCacheOptimization: true,
+          return _StickerInlineContent(
+            placeholder: placeholder,
+            backgroundColor: backgroundColor,
+            foregroundColor: foregroundColor,
+            isStandalone: isStandalone,
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _StickerInlineContent extends ConsumerWidget {
+  final String placeholder;
+  final Color backgroundColor;
+  final Color foregroundColor;
+  final bool isStandalone;
+
+  const _StickerInlineContent({
+    required this.placeholder,
+    required this.backgroundColor,
+    required this.foregroundColor,
+    required this.isStandalone,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final stickerAsync = ref.watch(stickerLookupProvider(placeholder));
+
+    return stickerAsync.when(
+      data: (sticker) {
+        final parts = placeholder.split('+');
+        final packPrefix =
+            sticker?.pack?.prefix ?? (parts.isNotEmpty ? parts[0] : '');
+        final stickerCode = ':$placeholder:';
+        final renderSticker = sticker;
+        final renderSize = renderSticker == null
+            ? _StickerRenderSize.medium
+            : _resolveStickerRenderSize(renderSticker, isStandalone);
+        final dimension = _stickerRenderDimension(renderSize);
+        final label = renderSticker?.name?.trim().isNotEmpty == true
+            ? renderSticker!.name!
+            : renderSticker?.slug ?? placeholder;
+
+        return Padding(
+          padding: EdgeInsets.symmetric(horizontal: isStandalone ? 0 : 3),
+          child: Tooltip(
+            message: label,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () =>
+                  showStickerPackSheet(context, packPrefix, stickerCode),
+              onSecondaryTap: () {
+                Clipboard.setData(ClipboardData(text: stickerCode));
+              },
+              child: ClipRRect(
+                borderRadius: const BorderRadius.all(Radius.circular(8)),
+                child: Container(
+                  width: dimension,
+                  height: dimension,
+                  decoration: BoxDecoration(
+                    color: backgroundColor.withOpacity(0.1),
+                    borderRadius: const BorderRadius.all(Radius.circular(8)),
+                  ),
+                  child: renderSticker == null
+                      ? Icon(
+                          Symbols.emoji_symbols,
+                          size: dimension * 0.45,
+                          color: foregroundColor,
+                        )
+                      : CloudImageWidget(
+                          file: renderSticker.image,
+                          fit: BoxFit.contain,
+                          noBlurhash: true,
+                        ),
                 ),
               ),
             ),
-          );
-        },
+          ),
+        );
+      },
+      loading: () => _StickerLoadingPlaceholder(
+        backgroundColor: backgroundColor,
+        foregroundColor: foregroundColor,
+        dimension: _stickerRenderDimension(_StickerRenderSize.medium),
+      ),
+      error: (_, _) => _StickerLoadingPlaceholder(
+        backgroundColor: backgroundColor,
+        foregroundColor: foregroundColor,
+        dimension: _stickerRenderDimension(_StickerRenderSize.medium),
+      ),
+    );
+  }
+}
+
+class _StickerLoadingPlaceholder extends StatelessWidget {
+  final Color backgroundColor;
+  final Color foregroundColor;
+  final double dimension;
+
+  const _StickerLoadingPlaceholder({
+    required this.backgroundColor,
+    required this.foregroundColor,
+    required this.dimension,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: const BorderRadius.all(Radius.circular(8)),
+      child: Container(
+        width: dimension,
+        height: dimension,
+        decoration: BoxDecoration(
+          color: backgroundColor.withOpacity(0.1),
+          borderRadius: const BorderRadius.all(Radius.circular(8)),
+        ),
+        child: Icon(
+          Symbols.emoji_symbols,
+          size: dimension * 0.45,
+          color: foregroundColor,
+        ),
       ),
     );
   }

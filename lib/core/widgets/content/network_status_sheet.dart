@@ -19,11 +19,14 @@ class NetworkStatusSheet extends HookConsumerWidget {
     final ws = ref.watch(websocketProvider);
     final wsState = ref.watch(websocketStateProvider);
     final apiState = ref.watch(networkStatusProvider);
+    final connectivityStatus = ref.watch(connectivityStatusProvider);
+    final hasConnectivity = hasNetworkConnectivityValue(connectivityStatus);
     final serverUrl = ref.watch(serverUrlProvider);
 
     final wsNotifier = ref.watch(websocketStateProvider.notifier);
 
     final checks = [
+      hasConnectivity,
       wsState == WebSocketState.connected(),
       apiState == NetworkStatus.online,
     ];
@@ -32,6 +35,7 @@ class NetworkStatusSheet extends HookConsumerWidget {
       if (!autoClose) return;
 
       final checks = [
+        hasConnectivity,
         wsState == WebSocketState.connected(),
         apiState == NetworkStatus.online,
       ];
@@ -42,7 +46,7 @@ class NetworkStatusSheet extends HookConsumerWidget {
       }
 
       return null;
-    }, [wsState, apiState]);
+    }, [wsState, apiState, hasConnectivity]);
 
     return SheetScaffold(
       heightFactor: 0.6,
@@ -78,16 +82,20 @@ class NetworkStatusSheet extends HookConsumerWidget {
                         Text('Everything is operational.'),
                       if (!checks[0])
                         Text(
-                          'WebSocket is disconnected. Realtime updates are not available. You can try tap the reconnect button below to try connect again.',
+                          'Your device is offline. Reconnect to Wi-Fi or cellular data to resume startup and realtime updates.',
                         ),
                       if (!checks[1])
+                        Text(
+                          'WebSocket is disconnected. Realtime updates are not available. You can try tap the reconnect button below to try connect again.',
+                        ),
+                      if (!checks[2])
                         ...([
                           Text(
                             'API is unreachable, you can try again later. If the issue persists, please contact support. Or you can check the service status.',
                           ),
                           InkWell(
                             onTap: () {
-                              launchUrlString("https://status.zhaishis.com");
+                              launchUrlString("https://status.solsynth.dev");
                             },
                             child: Text(
                               'Check Service Status',
@@ -98,6 +106,27 @@ class NetworkStatusSheet extends HookConsumerWidget {
                   ),
                 ],
               ),
+            ),
+            Row(
+              spacing: 8,
+              children: [
+                Text('Internet').bold(),
+                Text(hasConnectivity ? 'Available' : 'Offline'),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  child: hasConnectivity
+                      ? const Icon(
+                          Symbols.check_circle,
+                          color: Colors.green,
+                          size: 16,
+                        )
+                      : const Icon(
+                          Symbols.wifi_off,
+                          color: Colors.red,
+                          size: 16,
+                        ),
+                ),
+              ],
             ),
             Row(
               spacing: 8,
@@ -120,40 +149,19 @@ class NetworkStatusSheet extends HookConsumerWidget {
                   child: wsState.when(
                     connected: () => Icon(
                       Symbols.check_circle,
-                      key: ValueKey(WebSocketState.connected),
                       color: Colors.green,
                       size: 16,
                     ),
-                    connecting: () => Icon(
-                      Symbols.sync,
-                      key: ValueKey(WebSocketState.connecting),
-                      color: Colors.orange,
-                      size: 16,
-                    ),
-                    disconnected: () => Icon(
-                      Symbols.wifi_off,
-                      key: ValueKey(WebSocketState.disconnected),
-                      color: Colors.grey,
-                      size: 16,
-                    ),
-                    serverDown: () => Icon(
-                      Symbols.cloud_off,
-                      key: ValueKey(WebSocketState.serverDown),
-                      color: Colors.red,
-                      size: 16,
-                    ),
-                    duplicateDevice: () => Icon(
-                      Symbols.devices,
-                      key: ValueKey(WebSocketState.duplicateDevice),
-                      color: Colors.orange,
-                      size: 16,
-                    ),
-                    error: (message) => Icon(
-                      Symbols.error,
-                      key: ValueKey(WebSocketState.error),
-                      color: Colors.red,
-                      size: 16,
-                    ),
+                    connecting: () =>
+                        Icon(Symbols.sync, color: Colors.orange, size: 16),
+                    disconnected: () =>
+                        Icon(Symbols.wifi_off, color: Colors.grey, size: 16),
+                    serverDown: () =>
+                        Icon(Symbols.cloud_off, color: Colors.red, size: 16),
+                    duplicateDevice: () =>
+                        Icon(Symbols.devices, color: Colors.orange, size: 16),
+                    error: (message) =>
+                        Icon(Symbols.error, color: Colors.red, size: 16),
                   ),
                 ),
               ],
@@ -176,30 +184,18 @@ class NetworkStatusSheet extends HookConsumerWidget {
                   child: apiState == NetworkStatus.online
                       ? Icon(
                           Symbols.check_circle,
-                          key: ValueKey(NetworkStatus.online),
                           color: Colors.green,
                           size: 16,
                         )
                       : apiState == NetworkStatus.notReady
-                      ? Icon(
-                          Symbols.warning,
-                          key: ValueKey(NetworkStatus.notReady),
-                          color: Colors.orange,
-                          size: 16,
-                        )
+                      ? Icon(Symbols.warning, color: Colors.orange, size: 16)
                       : apiState == NetworkStatus.maintenance
                       ? Icon(
                           Symbols.construction,
-                          key: ValueKey(NetworkStatus.maintenance),
                           color: Colors.orange,
                           size: 16,
                         )
-                      : Icon(
-                          Symbols.cloud_off,
-                          key: ValueKey(NetworkStatus.offline),
-                          color: Colors.red,
-                          size: 16,
-                        ),
+                      : Icon(Symbols.cloud_off, color: Colors.red, size: 16),
                 ),
               ],
             ),
@@ -214,13 +210,43 @@ class NetworkStatusSheet extends HookConsumerWidget {
               mainAxisAlignment: MainAxisAlignment.end,
               spacing: 8,
               children: [
-                FilledButton.icon(
-                  icon: const Icon(Symbols.wifi),
-                  label: const Text('Reconnect'),
-                  onPressed: () {
-                    wsNotifier.manualReconnect();
-                  },
-                ),
+                if (wsState == WebSocketState.connected())
+                  OutlinedButton.icon(
+                    icon: const Icon(Symbols.link_off),
+                    label: const Text('Disconnect'),
+                    onPressed: () {
+                      wsNotifier.close();
+                    },
+                  ),
+                if (wsState != WebSocketState.connected())
+                  FilledButton.icon(
+                    icon: const Icon(Symbols.wifi),
+                    label: const Text('Connect'),
+                    onPressed: hasConnectivity
+                        ? () {
+                            wsNotifier.connect();
+                          }
+                        : null,
+                  ),
+                if (wsState == WebSocketState.connected() ||
+                    wsState == WebSocketState.disconnected() ||
+                    wsState.when(
+                      connected: () => false,
+                      connecting: () => false,
+                      disconnected: () => false,
+                      serverDown: () => false,
+                      duplicateDevice: () => false,
+                      error: (_) => true,
+                    ))
+                  FilledButton.icon(
+                    icon: const Icon(Symbols.sync),
+                    label: const Text('Reconnect'),
+                    onPressed: hasConnectivity
+                        ? () {
+                            wsNotifier.manualReconnect();
+                          }
+                        : null,
+                  ),
               ],
             ),
           ],

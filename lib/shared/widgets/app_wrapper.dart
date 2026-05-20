@@ -12,6 +12,8 @@ import 'package:in_app_review/in_app_review.dart';
 import 'package:island/auth/web_auth/auth_request_sheet.dart';
 import 'package:island/auth/web_auth/web_auth_server.dart';
 import 'package:island/accounts/progression_ws.dart';
+import 'package:island/accounts/pods/friend_status_listener.dart';
+import 'package:island/accounts/widgets/friend_status_toast.dart';
 import 'package:island/core/services/deeplink_service.dart';
 import 'package:island/core/services/quick_actions.dart';
 import 'package:island/notifications/notification.dart';
@@ -21,6 +23,7 @@ import 'package:island/route.gr.dart';
 import 'package:island/shared/widgets/app_onboarding_sheet.dart';
 import 'package:island/shared/widgets/app_startup_splash.dart';
 import 'package:island/shared/widgets/alert.dart';
+import 'package:island/shared/widgets/task_overlay.dart';
 import 'package:island/thoughts/screens/think_sheet.dart';
 import 'package:logging/logging.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -56,6 +59,8 @@ class AppWrapper extends HookConsumerWidget {
     final networkStateShowing = useState(false);
     final websocketState = ref.watch(websocketStateProvider);
     final apiState = ref.watch(networkStatusProvider);
+    final connectivityStatus = ref.watch(connectivityStatusProvider);
+    final hasConnectivity = hasNetworkConnectivityValue(connectivityStatus);
     final token = ref.watch(tokenProvider);
     final isShowSnow = useState(false);
     final isSnowGone = useState(false);
@@ -63,15 +68,31 @@ class AppWrapper extends HookConsumerWidget {
     final startupGateResolved = useState(false);
     final onboardingChecked = useState(false);
 
-    // Initialize progression WebSocket listener
     useEffect(() {
       ref.read(progressionWebSocketProvider);
       return null;
     }, []);
 
-    // Handle network status modal
+    useEffect(() {
+      ref.read(friendStatusListenerProvider);
+      return null;
+    }, []);
+
     useEffect(() {
       bool triedOpen = false;
+      if (!hasConnectivity && !networkStateShowing.value && !triedOpen) {
+        networkStateShowing.value = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          final ctx = ref.read(routerProvider).navigatorKey.currentContext!;
+          showModalBottomSheet(
+            context: ctx,
+            isScrollControlled: true,
+            builder: (context) => const NetworkStatusSheet(),
+          ).then((_) => networkStateShowing.value = false);
+        });
+        triedOpen = true;
+      }
+
       if (websocketState == WebSocketState.duplicateDevice() &&
           !networkStateShowing.value &&
           !triedOpen) {
@@ -87,7 +108,8 @@ class AppWrapper extends HookConsumerWidget {
         triedOpen = true;
       }
 
-      if (apiState != NetworkStatus.online &&
+      if (hasConnectivity &&
+          apiState != NetworkStatus.online &&
           !networkStateShowing.value &&
           !triedOpen) {
         networkStateShowing.value = true;
@@ -102,9 +124,46 @@ class AppWrapper extends HookConsumerWidget {
         triedOpen = true;
       }
       return null;
-    }, [websocketState, apiState]);
+    }, [websocketState, apiState, hasConnectivity]);
 
-    // Initialize services and listeners
+    useEffect(() {
+      if (!hasConnectivity) {
+        Future.microtask(() {
+          ref.read(networkStatusProvider.notifier).setOffline();
+        });
+        return null;
+      }
+
+      if (token == null) return null;
+      final shouldReconnect = websocketState.maybeWhen(
+        disconnected: () => true,
+        serverDown: () => true,
+        error: (_) => true,
+        orElse: () => false,
+      );
+      if (shouldReconnect) {
+        Future(() => ref.read(websocketStateProvider.notifier).connect());
+      }
+      return null;
+    }, [hasConnectivity, token, websocketState]);
+
+    // TODO reenable this till the python service is stable
+    // useEffect(() {
+    //   if (!kIsWeb) {
+    //     Future(() async {
+    //       await python.initPython();
+    //       if (python.isPythonAvailable()) {
+    //         Logger.root.info("[pocketpy] Initialized from AppWrapper");
+    //       } else {
+    //         Logger.root.info(
+    //           "[pocketpy] Not available (folder missing or init failed)",
+    //         );
+    //       }
+    //     });
+    //   }
+    //   return null;
+    // }, []);
+
     useEffect(() {
       final ntySubs = setupNotificationListener(context, ref);
       final sharingService = SharingIntentService();
@@ -156,7 +215,6 @@ class AppWrapper extends HookConsumerWidget {
       ref.read(rpcServerStateProvider.notifier).start();
       ref.read(webAuthServerStateProvider.notifier).start();
 
-      // Listen to special action events
       final composeSheetSubs = eventBus.on<ShowComposeSheetEvent>().listen((
         event,
       ) {
@@ -178,7 +236,6 @@ class AppWrapper extends HookConsumerWidget {
         if (ctx.mounted) _showThoughtSheet(ctx, event);
       });
 
-      // Web auth request listener
       final webAuthSubs = eventBus.on<WebAuthRequestEvent>().listen((event) {
         final ctx = ref.read(routerProvider).navigatorKey.currentContext!;
         if (ctx.mounted) _showWebAuthSheet(ctx, event);
@@ -361,6 +418,8 @@ class AppWrapper extends HookConsumerWidget {
                             ),
                           ),
                         ),
+                      const TaskOverlay(),
+                      const FriendStatusToastOverlay(),
                     ],
                   ),
                 ),
@@ -422,23 +481,16 @@ class AppWrapper extends HookConsumerWidget {
   void _handleDeepLink(Uri uri, WidgetRef ref, BuildContext context) async {
     String path = '/${uri.host}${uri.path}';
 
-    // Web auth deep links for native apps:
-    // 1) Request challenge:
-    //    solian://auth/web?app=MyApp&redirect_uri=myapp://auth-callback
-    // 2) Exchange signed challenge:
-    //    solian://auth/web?signed_challenge=...&redirect_uri=myapp://auth-callback
     if (path == '/auth/web') {
       await _handleProtocolWebAuth(uri, ref, context);
       return;
     }
 
-    // Special handling for OIDC auth callback
     if (path == '/auth/callback' && uri.queryParameters.containsKey('token')) {
       final token = uri.queryParameters['token']!;
       setToken(ref.read(sharedPreferencesProvider), token);
       ref.invalidate(tokenProvider);
 
-      // Do post login tasks
       await performPostLogin(context, ref);
 
       if (!kIsWeb &&
@@ -448,9 +500,6 @@ class AppWrapper extends HookConsumerWidget {
       return;
     }
 
-    // Special handling for share intent deep links
-    // Share intents are handled by SharingIntentService showing a modal,
-    // not by routing to a page
     if (path == '/share') {
       if (!kIsWeb &&
           (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
@@ -464,7 +513,6 @@ class AppWrapper extends HookConsumerWidget {
       return;
     }
 
-    // Handle NFC tag deep links: solian://phpass/<tag_id>
     if (path.startsWith('/phpass/')) {
       final tagId = path.substring('/phpass/'.length);
       if (tagId.isNotEmpty) {
@@ -473,17 +521,13 @@ class AppWrapper extends HookConsumerWidget {
       }
     }
 
-    // final router = ref.read(routerProvider);
     if (path == '/dashboard') {
       context.router.navigate(const DashboardRoute());
       return;
     }
 
-    // Handle bottom navigation routes properly to prevent navigation bar disappearance
-    // These routes should navigate within the bottom navigation shell
     final bottomNavRoutes = ['/', '/explore', '/chat', '/realms', '/account'];
     if (bottomNavRoutes.contains(path)) {
-      // Navigate within the bottom navigation shell using go() to maintain shell context
       context.router.navigatePath(path);
       if (!kIsWeb &&
           (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
@@ -497,7 +541,6 @@ class AppWrapper extends HookConsumerWidget {
         path,
       ).replace(queryParameters: uri.queryParameters).toString();
     }
-    // For non-bottom navigation routes, use push() to navigate outside the shell
     context.router.navigatePath(path);
     if (!kIsWeb &&
         (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {

@@ -14,6 +14,7 @@ import 'package:island/accounts/widgets/activitypub/actor_profile.dart';
 import 'package:island/core/config.dart';
 import 'package:island/core/network.dart';
 import 'package:island/core/services/time.dart';
+import 'package:island/posts/widgets/compose/post_interactions.dart';
 import 'package:island/posts/widgets/compose/post_replies_sheet.dart';
 import 'package:island/route.gr.dart';
 import 'package:island/shared/widgets/alert.dart';
@@ -91,6 +92,66 @@ class ThreadedReplyNode {
       parentId: json['parent_id'] as String?,
     );
   }
+}
+
+class PostThreadData {
+  final List<ThreadedReplyNode> ancestors;
+  final ThreadedReplyNode current;
+  final List<ThreadedReplyNode> descendants;
+  final bool hasMore;
+
+  const PostThreadData({
+    required this.ancestors,
+    required this.current,
+    required this.descendants,
+    this.hasMore = false,
+  });
+
+  factory PostThreadData.fromJson(Map<String, dynamic> json) {
+    return PostThreadData(
+      ancestors:
+          (json['ancestors'] as List<dynamic>?)
+              ?.map(
+                (e) => ThreadedReplyNode.fromJson(e as Map<String, dynamic>),
+              )
+              .toList() ??
+          [],
+      current: ThreadedReplyNode.fromJson(
+        json['current'] as Map<String, dynamic>,
+      ),
+      descendants:
+          (json['descendants'] as List<dynamic>?)
+              ?.map(
+                (e) => ThreadedReplyNode.fromJson(e as Map<String, dynamic>),
+              )
+              .toList() ??
+          [],
+      hasMore: json['has_more'] as bool? ?? false,
+    );
+  }
+
+  List<ThreadedReplyNode> get allNodes => [
+    ...ancestors,
+    current,
+    ...descendants,
+  ];
+}
+
+Map<String?, List<ThreadedReplyNode>> buildThreadChildrenMap(
+  Iterable<ThreadedReplyNode> nodes, {
+  String? hiddenParentId,
+  String? hiddenNodeId,
+  String? hiddenNodeParentId,
+}) {
+  final childrenByParentId = <String?, List<ThreadedReplyNode>>{};
+  for (final node in nodes) {
+    if (node.post.id == hiddenNodeId) continue;
+    final parentId = node.parentId == hiddenParentId
+        ? hiddenNodeParentId
+        : (node.parentId == hiddenNodeId ? hiddenNodeParentId : node.parentId);
+    childrenByParentId.putIfAbsent(parentId, () => []).add(node);
+  }
+  return childrenByParentId;
 }
 
 @riverpod
@@ -191,6 +252,7 @@ class PostReplyPreview extends HookConsumerWidget {
   final bool isAutoload;
   final double? itemMaxWidth;
   final VoidCallback? onOpen;
+  final void Function(String)? onPostTap;
   const PostReplyPreview({
     super.key,
     required this.parent,
@@ -199,6 +261,7 @@ class PostReplyPreview extends HookConsumerWidget {
     this.isAutoload = true,
     this.itemMaxWidth,
     this.onOpen,
+    this.onPostTap,
   });
 
   Widget _buildProfilePicture(
@@ -225,7 +288,7 @@ class PostReplyPreview extends HookConsumerWidget {
   /// Builds a compact attachment preview list for inline display
   Widget _buildAttachmentPreview(
     BuildContext context,
-    List<SnCloudFile> attachments,
+    List<IDisplayableCloudFile> attachments,
   ) {
     const maxVisible = 3;
     final visibleAttachments = attachments.take(maxVisible).toList();
@@ -246,11 +309,11 @@ class PostReplyPreview extends HookConsumerWidget {
   /// Builds a small thumbnail for a single attachment
   Widget _buildAttachmentThumbnail(
     BuildContext context,
-    SnCloudFile attachment,
+    IDisplayableCloudFile attachment,
   ) {
-    final isImage = attachment.mimeType?.startsWith('image') ?? false;
-    final isVideo = attachment.mimeType?.startsWith('video') ?? false;
-    final isAudio = attachment.mimeType?.startsWith('audio') ?? false;
+    final isImage = attachment.mimeType.startsWith('image');
+    final isVideo = attachment.mimeType.startsWith('video');
+    final isAudio = attachment.mimeType.startsWith('audio');
 
     Widget content;
     if (isImage) {
@@ -292,7 +355,7 @@ class PostReplyPreview extends HookConsumerWidget {
   /// Builds an icon-based representation for non-image files
   Widget _buildFileTypeIcon(
     BuildContext context,
-    SnCloudFile attachment, {
+    IDisplayableCloudFile attachment, {
     IconData? icon,
   }) {
     final fileIcon = icon ?? _getFileIcon(attachment.mimeType);
@@ -376,9 +439,9 @@ class PostReplyPreview extends HookConsumerWidget {
 
     if (visibleReactions.isEmpty) return const SizedBox.shrink();
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
+    return Wrap(
       spacing: 4,
+      runSpacing: 4,
       children: [
         for (final entry in visibleReactions)
           _buildCompactReactionChip(context, ref, entry.key, entry.value),
@@ -395,6 +458,7 @@ class PostReplyPreview extends HookConsumerWidget {
     String symbol,
     int count,
   ) {
+    final theme = Theme.of(context);
     final reactionInfo = kReactionTemplates[symbol];
     final hasSticker = _getReactionImageAvailable(symbol);
     final isCustom = symbol.contains('+');
@@ -407,48 +471,47 @@ class PostReplyPreview extends HookConsumerWidget {
         borderRadius: BorderRadius.circular(2),
         child: Image.network(
           '$serverUrl/sphere/stickers/lookup/$symbol/open',
-          width: 14,
-          height: 14,
+          width: 16,
+          height: 16,
           fit: BoxFit.contain,
           errorBuilder: (context, error, stackTrace) =>
-              const Text('🏷️', style: TextStyle(fontSize: 10)),
+              const Text('🏷️', style: TextStyle(fontSize: 11)),
         ),
       );
     } else if (hasSticker) {
       icon = Image.asset(
-        'assets/images/stickers/$symbol.png',
-        width: 14,
-        height: 14,
+        'assets/images/stickers/$symbol.webp',
+        width: 16,
+        height: 16,
         fit: BoxFit.contain,
       );
     } else {
       // Fall back to emoji icon
       icon = Text(
         reactionInfo?.icon ?? '❓',
-        style: const TextStyle(fontSize: 10),
+        style: const TextStyle(fontSize: 12, height: 1),
       );
     }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Theme.of(context).dividerColor.withOpacity(0.3),
-        ),
+        color: theme.colorScheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: theme.dividerColor.withOpacity(0.25)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
-        spacing: 3,
+        spacing: 4,
         children: [
           icon,
           Text(
             count.toString(),
             style: TextStyle(
               fontSize: 11,
-              fontWeight: FontWeight.w500,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurfaceVariant,
+              height: 1,
             ),
           ),
         ],
@@ -458,21 +521,22 @@ class PostReplyPreview extends HookConsumerWidget {
 
   /// Builds a badge showing remaining reaction count
   Widget _buildRemainingReactionsBadge(BuildContext context, int count) {
+    final theme = Theme.of(context);
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Theme.of(context).dividerColor.withOpacity(0.3),
-        ),
+        color: theme.colorScheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: theme.dividerColor.withOpacity(0.25)),
       ),
       child: Text(
         '+$count',
         style: TextStyle(
           fontSize: 11,
-          fontWeight: FontWeight.w500,
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
+          fontWeight: FontWeight.w600,
+          color: theme.colorScheme.onSurfaceVariant,
+          height: 1,
         ),
       ),
     );
@@ -481,14 +545,7 @@ class PostReplyPreview extends HookConsumerWidget {
   /// Checks if reaction has a sticker image asset
   /// Based on kAvailableStickers in post_reaction_sheet.dart
   bool _getReactionImageAvailable(String symbol) {
-    return {
-      'angry',
-      'clap',
-      'confuse',
-      'pray',
-      'thumb_up',
-      'party',
-    }.contains(symbol);
+    return kAvailableStickers.contains(symbol);
   }
 
   @override
@@ -580,7 +637,11 @@ class PostReplyPreview extends HookConsumerWidget {
             ),
             onTap: () {
               onOpen?.call();
-              context.router.push(PostDetailRoute(id: post.id));
+              if (onPostTap != null) {
+                onPostTap!(post.id);
+              } else {
+                context.router.push(PostDetailRoute(id: post.id));
+              }
             },
           ),
           for (final child in children)
@@ -666,7 +727,7 @@ class PostReplyPreview extends HookConsumerWidget {
                             child: _buildAttachmentPreview(
                               context,
                               data.value!.attachments,
-                            ),
+                            ).padding(bottom: 4),
                           )
                         else
                           Expanded(
@@ -823,6 +884,7 @@ class ReferencedPostWidget extends HookConsumerWidget {
   final bool isInteractive;
   final EdgeInsets renderingPadding;
   final bool isCollapsible;
+  final void Function(String)? onPostTap;
 
   const ReferencedPostWidget({
     super.key,
@@ -830,6 +892,7 @@ class ReferencedPostWidget extends HookConsumerWidget {
     this.isInteractive = true,
     this.renderingPadding = EdgeInsets.zero,
     this.isCollapsible = true,
+    this.onPostTap,
   });
 
   @override
@@ -1033,7 +1096,13 @@ class ReferencedPostWidget extends HookConsumerWidget {
     }
 
     return GestureDetector(
-      onTap: () => context.router.push(PostDetailRoute(id: referencePost.id)),
+      onTap: () {
+        if (onPostTap != null) {
+          onPostTap!(referencePost.id);
+        } else {
+          context.router.push(PostDetailRoute(id: referencePost.id));
+        }
+      },
       child: content,
     );
   }
@@ -1525,7 +1594,7 @@ class PostBody extends ConsumerWidget {
       );
     }
 
-    SnCloudFile? getThumbnailAttachment() {
+    IDisplayableCloudFile? getThumbnailAttachment() {
       final thumbnailId = item.meta?['thumbnail'] as String?;
       if (thumbnailId == null) return null;
       try {

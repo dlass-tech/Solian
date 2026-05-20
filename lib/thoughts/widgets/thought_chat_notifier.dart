@@ -384,6 +384,7 @@ class ThoughtChatNotifier extends _$ThoughtChatNotifier {
           .createCloudFile(
             fileData: attachment,
             poolId: selectedPoolId,
+            usage: 'thought',
             mode: attachment.type == UniversalFileType.file
                 ? FileUploadMode.generic
                 : FileUploadMode.mediaSafe,
@@ -453,7 +454,7 @@ class ThoughtChatNotifier extends _$ThoughtChatNotifier {
           files: attachments
               .where((a) => a.isOnCloud)
               .map((a) => a.data)
-              .cast<SnCloudFile>()
+              .whereType<SnCloudFileReference>()
               .toList(),
         ),
       ],

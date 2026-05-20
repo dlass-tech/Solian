@@ -49,7 +49,7 @@ Widget getProviderIcon(String provider, {double size = 24, Color? color}) {
       );
     case 'spotify':
       return Image.asset(
-        'assets/images/oidc/spotify.png',
+        'assets/images/oidc/spotify.webp',
         width: size,
         height: size,
         color: color,
@@ -529,7 +529,7 @@ class _CreateAccountTermsScreen extends HookConsumerWidget {
                     color: Colors.transparent,
                     child: InkWell(
                       onTap: () {
-                        launchUrlString('https://zhaishis.com/terms');
+                        launchUrlString('https://solsynth.dev/terms');
                       },
                       child: Row(
                         mainAxisSize: MainAxisSize.min,

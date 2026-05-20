@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
@@ -22,7 +23,7 @@ String localeToLanguageCode(Locale locale) {
 
 const kTokenPairStoreKey = 'dyn_user_tk';
 
-const kNetworkServerDefault = 'https://api.dy.ci';
+const kNetworkServerDefault = 'https://api.solian.app';
 const kNetworkServerStoreKey = 'app_server_url';
 
 const kAppbarTransparentStoreKey = 'app_bar_transparent';
@@ -52,6 +53,7 @@ const kAppLinkCollapseMode = 'app_link_collapse_mode';
 const kAppThemeMode = 'app_theme_mode';
 const kAppDisableAnimation = 'app_disable_animation';
 const kAppGroupedChatList = 'app_grouped_chat_list';
+const kAppDeveloperMode = 'app_developer_mode';
 const kFeaturedPostsCollapsedId =
     'featured_posts_collapsed_id'; // Key for storing the ID of the collapsed featured post
 const kAppFirstLaunchAt = 'app_first_launch_at';
@@ -71,6 +73,12 @@ const kRealmDisplayModeList = 'list';
 const kRealmDisplayModeCard = 'card';
 const kAppExploreSettings = 'app_explore_settings';
 const kAppMediaProxyEnabled = 'app_media_proxy_enabled';
+const kAppFriendStatusDesktopNotification =
+    'app_friend_status_desktop_notification';
+const kAppIpOverrideEnabled = 'app_ip_override_enabled';
+const kAppIpOverrideList = 'app_ip_override_list';
+const kAppIpOverrideMode = 'app_ip_override_mode';
+const kAppIpOverrideDomains = 'app_ip_override_domains';
 
 // Will be overrided by the ProviderScope
 final sharedPreferencesProvider = Provider<SharedPreferences>((ref) {
@@ -82,14 +90,135 @@ final serverUrlProvider = Provider<String>((ref) {
   return prefs.getString(kNetworkServerStoreKey) ?? kNetworkServerDefault;
 });
 
+final developerModeProvider = Provider<bool>((ref) {
+  if (kDebugMode) return true;
+  final prefs = ref.watch(sharedPreferencesProvider);
+  return prefs.getBool(kAppDeveloperMode) ?? false;
+});
+
+@freezed
+sealed class IpOverride with _$IpOverride {
+  const factory IpOverride({
+    required String ip,
+    int? port,
+  }) = _IpOverride;
+
+  factory IpOverride.fromJson(Map<String, dynamic> json) =>
+      _$IpOverrideFromJson(json);
+}
+
+@freezed
+sealed class IpOverrideSettings with _$IpOverrideSettings {
+  const factory IpOverrideSettings({
+    required bool enabled,
+    required List<IpOverride> overrides,
+  }) = _IpOverrideSettings;
+
+  factory IpOverrideSettings.fromJson(Map<String, dynamic> json) =>
+      _$IpOverrideSettingsFromJson(json);
+}
+
+enum IpOverrideMode { complete, mixed, off }
+
+bool matchesIpOverrideDomain(Uri uri, String domain) {
+  final trimmed = domain.trim().toLowerCase();
+  if (trimmed.isEmpty) return false;
+  final host = uri.host.toLowerCase();
+  if (trimmed.startsWith('.')) {
+    return host.endsWith(trimmed);
+  }
+  return host == trimmed;
+}
+
+final ipOverrideModeProvider = Provider<IpOverrideMode>((ref) {
+  final prefs = ref.watch(sharedPreferencesProvider);
+  final rawMode = prefs.getString(kAppIpOverrideMode);
+  if (rawMode != null) {
+    return IpOverrideMode.values.firstWhere(
+      (mode) => mode.name == rawMode,
+      orElse: () => IpOverrideMode.off,
+    );
+  }
+
+  final enabled = prefs.getBool(kAppIpOverrideEnabled) ?? false;
+  return enabled ? IpOverrideMode.complete : IpOverrideMode.off;
+});
+
+final ipOverrideDomainsProvider = Provider<List<String>>((ref) {
+  final prefs = ref.watch(sharedPreferencesProvider);
+  final serverUrl = ref.watch(serverUrlProvider);
+  final defaults = <String>[];
+
+  try {
+    final host = Uri.parse(serverUrl).host;
+    if (host.isNotEmpty) {
+      defaults.add(host);
+    }
+  } catch (_) {}
+
+  final rawDomains = prefs.getString(kAppIpOverrideDomains);
+  if (rawDomains == null || rawDomains.isEmpty) {
+    return defaults;
+  }
+
+  try {
+    final decoded = jsonDecode(rawDomains);
+    if (decoded is List) {
+      final domains = decoded
+          .map((item) => item.toString().trim())
+          .where((item) => item.isNotEmpty)
+          .toList();
+      return domains.isNotEmpty ? domains : defaults;
+    }
+  } catch (_) {}
+
+  return defaults;
+});
+
+final ipOverrideSettingsProvider = Provider<IpOverrideSettings>((ref) {
+  final prefs = ref.watch(sharedPreferencesProvider);
+  final enabled = ref.watch(ipOverrideModeProvider) != IpOverrideMode.off;
+  final rawList = prefs.getString(kAppIpOverrideList);
+  List<IpOverride> overrides = [];
+  if (rawList != null && rawList.isNotEmpty) {
+    try {
+      final decoded = jsonDecode(rawList) as List;
+      overrides = decoded
+          .map((e) => IpOverride.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (_) {}
+  }
+  return IpOverrideSettings(enabled: enabled, overrides: overrides);
+});
+
+final ipOverrideDomainSuffixProvider = Provider<String?>((ref) {
+  final serverUrl = ref.watch(serverUrlProvider);
+  try {
+    final uri = Uri.parse(serverUrl);
+    if (uri.host.contains('.')) {
+      return uri.host;
+    }
+  } catch (_) {}
+  return null;
+});
+
 @freezed
 sealed class ThemeColors with _$ThemeColors {
   factory ThemeColors({
     int? primary,
+    int? onPrimary,
+    int? primaryContainer,
     int? secondary,
+    int? onSecondary,
+    int? secondaryContainer,
     int? tertiary,
+    int? onTertiary,
+    int? tertiaryContainer,
     int? surface,
+    int? surfaceContainerHighest,
     int? background,
+    int? outline,
+    int? shadow,
     int? error,
   }) = _ThemeColors;
 
@@ -163,6 +292,7 @@ sealed class AppSettings with _$AppSettings {
     required DashboardConfig? dashboardConfig,
     required ExploreSettings exploreSettings,
     required bool mediaProxyEnabled,
+    required bool friendStatusDesktopNotification,
   }) = _AppSettings;
 }
 
@@ -217,6 +347,8 @@ class AppSettingsNotifier extends _$AppSettingsNotifier {
       dashboardConfig: _getDashboardConfigFromPrefs(prefs),
       exploreSettings: _getExploreSettingsFromPrefs(prefs),
       mediaProxyEnabled: prefs.getBool(kAppMediaProxyEnabled) ?? true,
+      friendStatusDesktopNotification:
+          prefs.getBool(kAppFriendStatusDesktopNotification) ?? true,
     );
   }
 
@@ -460,6 +592,12 @@ class AppSettingsNotifier extends _$AppSettingsNotifier {
     state = state.copyWith(groupedChatList: value);
   }
 
+  void setDeveloperMode(bool value) {
+    final prefs = ref.read(sharedPreferencesProvider);
+    prefs.setBool(kAppDeveloperMode, value);
+    ref.invalidate(developerModeProvider);
+  }
+
   void setFirstLaunchAt(String? value) {
     final prefs = ref.read(sharedPreferencesProvider);
     if (value != null) {
@@ -544,6 +682,47 @@ class AppSettingsNotifier extends _$AppSettingsNotifier {
     final prefs = ref.read(sharedPreferencesProvider);
     prefs.setBool(kAppMediaProxyEnabled, value);
     state = state.copyWith(mediaProxyEnabled: value);
+  }
+
+  void setFriendStatusDesktopNotification(bool value) {
+    final prefs = ref.read(sharedPreferencesProvider);
+    prefs.setBool(kAppFriendStatusDesktopNotification, value);
+    state = state.copyWith(friendStatusDesktopNotification: value);
+  }
+
+  void setIpOverrideMode(IpOverrideMode mode) {
+    final prefs = ref.read(sharedPreferencesProvider);
+    prefs.setString(kAppIpOverrideMode, mode.name);
+    prefs.setBool(kAppIpOverrideEnabled, mode != IpOverrideMode.off);
+    ref.invalidate(ipOverrideModeProvider);
+    ref.invalidate(ipOverrideSettingsProvider);
+    ref.invalidate(ipOverrideDomainsProvider);
+  }
+
+  void setIpOverrideDomains(List<String> domains) {
+    final prefs = ref.read(sharedPreferencesProvider);
+    final cleaned = domains.map((domain) => domain.trim()).where((domain) => domain.isNotEmpty).toList();
+    if (cleaned.isEmpty) {
+      prefs.remove(kAppIpOverrideDomains);
+    } else {
+      prefs.setString(kAppIpOverrideDomains, jsonEncode(cleaned));
+    }
+    ref.invalidate(ipOverrideDomainsProvider);
+  }
+
+  void setIpOverrideEnabled(bool value) {
+    setIpOverrideMode(value ? IpOverrideMode.complete : IpOverrideMode.off);
+  }
+
+  void setIpOverrideList(List<IpOverride> overrides) {
+    final prefs = ref.read(sharedPreferencesProvider);
+    if (overrides.isEmpty) {
+      prefs.remove(kAppIpOverrideList);
+    } else {
+      final encoded = jsonEncode(overrides.map((o) => o.toJson()).toList());
+      prefs.setString(kAppIpOverrideList, encoded);
+    }
+    ref.invalidate(ipOverrideSettingsProvider);
   }
 }
 

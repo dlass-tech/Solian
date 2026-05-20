@@ -7,6 +7,7 @@ import 'package:solar_network_sdk/src/models/posts/publisher.dart';
 import 'package:solar_network_sdk/src/models/posts/post_category.dart';
 import 'package:solar_network_sdk/src/models/posts/embed.dart';
 import 'package:solar_network_sdk/src/models/posts/heatmap.dart';
+import 'package:solar_network_sdk/src/models/posts/post_collection.dart';
 import 'package:solar_network_sdk/src/models/posts/tag_quota.dart';
 import 'package:solar_network_sdk/src/models/posts/publisher_rating_record.dart';
 import 'package:solar_network_sdk/src/models/posts/publisher_leaderboard.dart';
@@ -19,6 +20,11 @@ class SphereApi extends BaseApi {
 
   /// Base path for all sphere endpoints.
   static const String _basePath = '/sphere';
+
+  /// Base path for publisher-scoped endpoints behind gateway.
+  ///
+  /// Collections live under `/sphere/pub/...`.
+  static const String _pubBasePath = '/sphere';
 
   // ==========================================
   // Post endpoints
@@ -34,6 +40,221 @@ class SphereApi extends BaseApi {
     return SnPost.fromJson(response.data!);
   }
 
+  // ==========================================
+  // Post collection endpoints
+  // ==========================================
+
+  /// Lists collections owned by a publisher.
+  Future<List<SnPostCollection>> listPublisherCollections(
+    String publisherName,
+  ) async {
+    final response = await get<List<dynamic>>(
+      '$_pubBasePath/publishers/$publisherName/collections',
+    );
+    return parseList(response, SnPostCollection.fromJson);
+  }
+
+  /// Gets a collection by slug.
+  Future<SnPostCollection> getPublisherCollection({
+    required String publisherName,
+    required String slug,
+  }) async {
+    final response = await get<Map<String, dynamic>>(
+      '$_pubBasePath/publishers/$publisherName/collections/$slug',
+    );
+    return SnPostCollection.fromJson(response.data!);
+  }
+
+  /// Creates a collection.
+  Future<SnPostCollection> createPublisherCollection({
+    required String publisherName,
+    required String slug,
+    String? name,
+    String? description,
+    String? backgroundId,
+    String? iconId,
+  }) async {
+    final response = await post<Map<String, dynamic>>(
+      '$_pubBasePath/publishers/$publisherName/collections',
+      data: {
+        'slug': slug,
+        'name': name,
+        'description': description,
+        'background_id': backgroundId,
+        'icon_id': iconId,
+      }..removeWhere((_, v) => v == null),
+    );
+    return SnPostCollection.fromJson(response.data!);
+  }
+
+  /// Updates a collection.
+  Future<SnPostCollection> updatePublisherCollection({
+    required String publisherName,
+    required String slug,
+    String? name,
+    String? description,
+    String? backgroundId,
+    bool clearBackground = false,
+    String? iconId,
+    bool clearIcon = false,
+  }) async {
+    final data = <String, dynamic>{};
+    if (name != null) data['name'] = name;
+    if (description != null) data['description'] = description;
+    if (clearBackground) {
+      data['background_id'] = null;
+    } else if (backgroundId != null) {
+      data['background_id'] = backgroundId;
+    }
+    if (clearIcon) {
+      data['icon_id'] = null;
+    } else if (iconId != null) {
+      data['icon_id'] = iconId;
+    }
+    final response = await patch<Map<String, dynamic>>(
+      '$_pubBasePath/publishers/$publisherName/collections/$slug',
+      data: data,
+    );
+    return SnPostCollection.fromJson(response.data!);
+  }
+
+  /// Deletes a collection.
+  Future<void> deletePublisherCollection({
+    required String publisherName,
+    required String slug,
+  }) async {
+    await delete('$_pubBasePath/publishers/$publisherName/collections/$slug');
+  }
+
+  /// Lists posts in a collection.
+  Future<PaginatedResult<SnPost>> listPublisherCollectionPosts({
+    required String publisherName,
+    required String slug,
+    int offset = 0,
+    int take = 20,
+  }) async {
+    final response = await get<List<dynamic>>(
+      '$_pubBasePath/publishers/$publisherName/collections/$slug/posts',
+      queryParameters: {'offset': offset, 'take': take},
+    );
+    final totalCount = getTotalCount(response.headers);
+    final items = parseList(response, SnPost.fromJson);
+    return PaginatedResult(items: items, totalCount: totalCount);
+  }
+
+  /// Reorders collection posts.
+  Future<void> reorderPublisherCollectionPosts({
+    required String publisherName,
+    required String slug,
+    required List<String> postIds,
+  }) async {
+    await put<void>(
+      '$_pubBasePath/publishers/$publisherName/collections/$slug/posts/reorder',
+      data: {'post_ids': postIds},
+    );
+  }
+
+  /// Gets previous visible post in collection order.
+  Future<SnPost> getPublisherCollectionPrevPost({
+    required String publisherName,
+    required String slug,
+    required String postId,
+  }) async {
+    final response = await get<Map<String, dynamic>>(
+      '$_pubBasePath/publishers/$publisherName/collections/$slug/posts/$postId/prev',
+    );
+    return SnPost.fromJson(response.data!);
+  }
+
+  /// Gets next visible post in collection order.
+  Future<SnPost> getPublisherCollectionNextPost({
+    required String publisherName,
+    required String slug,
+    required String postId,
+  }) async {
+    final response = await get<Map<String, dynamic>>(
+      '$_pubBasePath/publishers/$publisherName/collections/$slug/posts/$postId/next',
+    );
+    return SnPost.fromJson(response.data!);
+  }
+
+  /// Adds a post to a collection.
+  ///
+  /// If [order] is null, the server appends to the end.
+  Future<void> addPostToCollection({
+    required String publisherName,
+    required String slug,
+    required String postId,
+    int? order,
+  }) async {
+    await post<void>(
+      '$_pubBasePath/publishers/$publisherName/collections/$slug/posts',
+      data: {'post_id': postId, 'order': order}
+        ..removeWhere((_, v) => v == null),
+    );
+  }
+
+  /// Removes a post from a collection.
+  Future<void> removePostFromCollection({
+    required String publisherName,
+    required String slug,
+    required String postId,
+  }) async {
+    await delete<void>(
+      '$_pubBasePath/publishers/$publisherName/collections/$slug/posts/$postId',
+    );
+  }
+
+  /// Batch adds posts to a collection.
+  Future<void> batchAddPostsToCollection({
+    required String publisherName,
+    required String slug,
+    required List<String> postIds,
+  }) async {
+    await post<void>(
+      '$_pubBasePath/publishers/$publisherName/collections/$slug/posts/batch',
+      data: {'post_ids': postIds},
+    );
+  }
+
+  /// Batch removes posts from a collection.
+  Future<void> batchRemovePostsFromCollection({
+    required String publisherName,
+    required String slug,
+    required List<String> postIds,
+  }) async {
+    await post<void>(
+      '$_pubBasePath/publishers/$publisherName/collections/$slug/posts/batch/remove',
+      data: {'post_ids': postIds},
+    );
+  }
+
+  /// Batch deletes posts.
+  Future<void> batchDeletePosts(List<String> postIds) async {
+    await post<void>(
+      '$_basePath/posts/batch/delete',
+      data: {'post_ids': postIds},
+    );
+  }
+
+  /// Batch updates post visibility.
+  Future<void> batchUpdatePostVisibility({
+    required List<String> postIds,
+    String? visibility,
+    DateTime? draftedAt,
+    DateTime? publishedAt,
+  }) async {
+    await post<void>(
+      '$_basePath/posts/batch/visibility',
+      data: {
+        'post_ids': postIds,
+        'visibility': visibility,
+        'drafted_at': draftedAt?.toUtc().toIso8601String(),
+        'published_at': publishedAt?.toUtc().toIso8601String(),
+      }..removeWhere((_, value) => value == null),
+    );
+  }
+
   /// Gets a list of posts.
   ///
   /// [offset] - Pagination offset.
@@ -46,7 +267,8 @@ class SphereApi extends BaseApi {
   }) async {
     final response = await get<List<dynamic>>(
       '$_basePath/posts',
-      queryParameters: {'offset': offset, 'take': take, 'sort': ?sort},
+      queryParameters: {'offset': offset, 'take': take, 'sort': sort}
+        ..removeWhere((_, v) => v == null),
     );
     final totalCount = getTotalCount(response.headers);
     final items = parseList(response, SnPost.fromJson);
@@ -118,6 +340,53 @@ class SphereApi extends BaseApi {
     await delete('$_basePath/posts/$postId/boost');
   }
 
+  /// Gets the current user's bookmark for a post.
+  ///
+  /// [postId] - The post ID.
+  /// Returns the bookmark if it exists, or null.
+  Future<SnPostBookmark?> getPostBookmark(String postId) async {
+    final response = await get<dynamic>('$_basePath/posts/$postId/bookmark');
+    if (response.statusCode == 204) return null;
+    return SnPostBookmark.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// Bookmarks a post.
+  ///
+  /// [postId] - The post ID.
+  /// Returns the bookmark record.
+  Future<SnPostBookmark> bookmarkPost(String postId) async {
+    final response = await post<Map<String, dynamic>>(
+      '$_basePath/posts/$postId/bookmark',
+    );
+    return SnPostBookmark.fromJson(response.data!);
+  }
+
+  /// Removes a bookmark from a post.
+  ///
+  /// [postId] - The post ID.
+  Future<void> unbookmarkPost(String postId) async {
+    await delete('$_basePath/posts/$postId/bookmark');
+  }
+
+  /// Gets the current user's bookmarked posts.
+  ///
+  /// [offset] - Pagination offset.
+  /// [take] - Number of items to take.
+  /// [order] - Sort order (e.g. "created").
+  Future<PaginatedResult<SnPost>> getBookmarks({
+    int offset = 0,
+    int take = 20,
+    String? order,
+  }) async {
+    final response = await get<List<dynamic>>(
+      '$_basePath/posts/bookmarks',
+      queryParameters: {'offset': offset, 'take': take, 'order': ?order},
+    );
+    final totalCount = getTotalCount(response.headers);
+    final items = parseList(response, SnPost.fromJson);
+    return PaginatedResult(items: items, totalCount: totalCount);
+  }
+
   /// Gets replies to a post.
   ///
   /// [postId] - The post ID.
@@ -165,11 +434,29 @@ class SphereApi extends BaseApi {
   /// Gets reactions for a post.
   ///
   /// [postId] - The post ID.
-  Future<List<SnPostReaction>> getPostReactions(String postId) async {
+  /// [symbol] - Optional emoji symbol to filter by.
+  /// [offset] - Pagination offset.
+  /// [take] - Number of items to take.
+  /// [order] - Sort order ("created" or default by symbol).
+  Future<PaginatedResult<SnPostReaction>> getPostReactions({
+    required String postId,
+    String? symbol,
+    int offset = 0,
+    int take = 20,
+    String? order,
+  }) async {
     final response = await get<List<dynamic>>(
       '$_basePath/posts/$postId/reactions',
+      queryParameters: {
+        'offset': offset,
+        'take': take,
+        'symbol': ?symbol,
+        'order': ?order,
+      },
     );
-    return parseList(response, SnPostReaction.fromJson);
+    final totalCount = getTotalCount(response.headers);
+    final items = parseList(response, SnPostReaction.fromJson);
+    return PaginatedResult(items: items, totalCount: totalCount);
   }
 
   /// Adds a reaction to a post.
@@ -191,6 +478,30 @@ class SphereApi extends BaseApi {
   /// [postId] - The post ID.
   Future<void> removeReaction(String postId) async {
     await delete('$_basePath/posts/$postId/reactions');
+  }
+
+  /// Gets visible reactions made by a specific user.
+  ///
+  /// [name] - The local username.
+  /// [offset] - Pagination offset.
+  /// [take] - Number of items to take.
+  /// [order] - Sort order ("created" or default).
+  Future<PaginatedResult<UserReactionListingItem>> getUserReactions({
+    required String name,
+    int offset = 0,
+    int take = 20,
+    String? order,
+  }) async {
+    final response = await get<List<dynamic>>(
+      '$_basePath/posts/reactions/users/$name',
+      queryParameters: {'offset': offset, 'take': take, 'order': ?order},
+    );
+    final totalCount = getTotalCount(response.headers);
+    final items = parseList(
+      response,
+      (json) => UserReactionListingItem.fromJson(json),
+    );
+    return PaginatedResult(items: items, totalCount: totalCount);
   }
 
   /// Gets awards for a post.
@@ -331,9 +642,7 @@ class SphereApi extends BaseApi {
   ///
   /// [name] - The publisher name.
   Future<double> getPublisherRating(String name) async {
-    final response = await get<double>(
-      '$_basePath/publishers/$name/rating',
-    );
+    final response = await get<double>('$_basePath/publishers/$name/rating');
     return response.data!;
   }
 
@@ -359,7 +668,9 @@ class SphereApi extends BaseApi {
   /// Gets a publisher's rating overview with percentile and grade.
   ///
   /// [name] - The publisher name.
-  Future<SnPublisherRatingOverview> getPublisherRatingOverview(String name) async {
+  Future<SnPublisherRatingOverview> getPublisherRatingOverview(
+    String name,
+  ) async {
     final response = await get<Map<String, dynamic>>(
       '$_basePath/publishers/$name/rating/overview',
     );
@@ -517,12 +828,8 @@ class SphereApi extends BaseApi {
   }) async {
     final response = await post<Map<String, dynamic>>(
       '$_basePath/posts/tags',
-      queryParameters: {if (publisherName != null) 'pub': publisherName},
-      data: {
-        'slug': slug,
-        if (name != null) 'name': name,
-        if (description != null) 'description': description,
-      },
+      queryParameters: {'pub': ?publisherName},
+      data: {'slug': slug, 'name': ?name, 'description': ?description},
     );
     return SnPostTag.fromJson(response.data!);
   }
@@ -541,11 +848,8 @@ class SphereApi extends BaseApi {
   }) async {
     final response = await patch<Map<String, dynamic>>(
       '$_basePath/posts/tags/$slug',
-      queryParameters: {if (publisherName != null) 'pub': publisherName},
-      data: {
-        if (name != null) 'name': name,
-        if (description != null) 'description': description,
-      },
+      queryParameters: {'pub': ?publisherName},
+      data: {'name': ?name, 'description': ?description},
     );
     return SnPostTag.fromJson(response.data!);
   }
@@ -560,7 +864,7 @@ class SphereApi extends BaseApi {
   }) async {
     final response = await post<Map<String, dynamic>>(
       '$_basePath/posts/tags/$slug/claim',
-      queryParameters: {if (publisherName != null) 'pub': publisherName},
+      queryParameters: {'pub': ?publisherName},
     );
     return SnPostTag.fromJson(response.data!);
   }
@@ -575,7 +879,7 @@ class SphereApi extends BaseApi {
   }) async {
     final response = await get<Map<String, dynamic>>(
       '$_basePath/posts/tags/$slug/quota',
-      queryParameters: {if (publisherName != null) 'pub': publisherName},
+      queryParameters: {'pub': ?publisherName},
     );
     return SnTagQuota.fromJson(response.data!);
   }
@@ -646,10 +950,7 @@ class SphereApi extends BaseApi {
   }) async {
     final response = await patch<Map<String, dynamic>>(
       '$_basePath/admin/posts/tags/$slug',
-      data: {
-        if (name != null) 'name': name,
-        if (description != null) 'description': description,
-      },
+      data: {'name': ?name, 'description': ?description},
     );
     return SnPostTag.fromJson(response.data!);
   }

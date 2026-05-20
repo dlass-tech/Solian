@@ -32,7 +32,8 @@ class FileListView extends HookConsumerWidget {
   final ValueNotifier<String> currentPath;
   final ValueNotifier<SnFilePool?> selectedPool;
   final VoidCallback onPickAndUpload;
-  final Function(BuildContext, ValueNotifier<String>) onShowCreateDirectory;
+  final VoidCallback onShowCreateFolder;
+  final void Function(SnCloudFile file) onInspectFile;
   final ValueNotifier<FileListMode> mode;
   final ValueNotifier<FileListViewMode> viewMode;
   final ValueNotifier<bool> isSelectionMode;
@@ -44,7 +45,8 @@ class FileListView extends HookConsumerWidget {
     required this.currentPath,
     required this.selectedPool,
     required this.onPickAndUpload,
-    required this.onShowCreateDirectory,
+    required this.onShowCreateFolder,
+    required this.onInspectFile,
     required this.mode,
     required this.viewMode,
     required this.isSelectionMode,
@@ -139,7 +141,9 @@ class FileListView extends HookConsumerWidget {
         isRefreshable: false,
         isSliver: true,
         contentBuilder: (data, footer) => data.isEmpty
-            ? SliverToBoxAdapter(child: _buildEmptyDirectoryHint(ref, currentPath))
+            ? SliverToBoxAdapter(
+                child: _buildEmptyDirectoryHint(ref, currentPath),
+              )
             : _buildFileListContent(
                 data,
                 ref,
@@ -164,11 +168,23 @@ class FileListView extends HookConsumerWidget {
             items: [
               PopupMenuItem<String>(
                 value: 'root',
-                child: Row(children: [Icon(Symbols.folder), const Gap(12), Text('rootDirectory').tr()]),
+                child: Row(
+                  children: [
+                    Icon(Symbols.folder),
+                    const Gap(12),
+                    Text('rootDirectory').tr(),
+                  ],
+                ),
               ),
               PopupMenuItem<String>(
                 value: 'unindexed',
-                child: Row(children: [Icon(Symbols.inventory_2), const Gap(12), Text('unindexedFiles').tr()]),
+                child: Row(
+                  children: [
+                    Icon(Symbols.inventory_2),
+                    const Gap(12),
+                    Text('unindexedFiles').tr(),
+                  ],
+                ),
               ),
             ],
           );
@@ -183,7 +199,10 @@ class FileListView extends HookConsumerWidget {
           children: [
             const Icon(Symbols.inventory_2, size: 20),
             const Gap(8),
-            Text('unindexedFiles', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)).tr(),
+            Text(
+              'unindexedFiles',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+            ).tr(),
           ],
         ),
       );
@@ -196,11 +215,23 @@ class FileListView extends HookConsumerWidget {
             items: [
               PopupMenuItem<String>(
                 value: 'unindexed',
-                child: Row(children: [Icon(Symbols.inventory_2), const Gap(12), Text('unindexedFiles').tr()]),
+                child: Row(
+                  children: [
+                    Icon(Symbols.inventory_2),
+                    const Gap(12),
+                    Text('unindexedFiles').tr(),
+                  ],
+                ),
               ),
               PopupMenuItem<String>(
                 value: 'root',
-                child: Row(children: [Icon(Symbols.folder), const Gap(12), Text('rootDirectory').tr()]),
+                child: Row(
+                  children: [
+                    Icon(Symbols.folder),
+                    const Gap(12),
+                    Text('rootDirectory').tr(),
+                  ],
+                ),
               ),
             ],
           );
@@ -214,12 +245,18 @@ class FileListView extends HookConsumerWidget {
           children: [
             const Icon(Symbols.folder, size: 20),
             const Gap(8),
-            Text('rootDirectory', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)).tr(),
+            Text(
+              'rootDirectory',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+            ).tr(),
           ],
         ),
       );
     } else {
-      final pathParts = currentPath.value.split('/').where((part) => part.isNotEmpty).toList();
+      final pathParts = currentPath.value
+          .split('/')
+          .where((part) => part.isNotEmpty)
+          .toList();
       final breadcrumbs = <Widget>[];
 
       // Add root
@@ -231,7 +268,10 @@ class FileListView extends HookConsumerWidget {
             children: [
               const Icon(Symbols.folder, size: 20),
               const Gap(4),
-              const Text('Root', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+              const Text(
+                'Root',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+              ),
             ],
           ),
         ),
@@ -246,19 +286,30 @@ class FileListView extends HookConsumerWidget {
         breadcrumbs.add(Text('pathSeparator').tr());
         if (i == pathParts.length - 1) {
           // Current directory
-          breadcrumbs.add(Text(pathParts[i], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)));
+          breadcrumbs.add(
+            Text(
+              pathParts[i],
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+            ),
+          );
         } else {
           // Clickable parent directory
           breadcrumbs.add(
             InkWell(
               onTap: () => currentPath.value = path,
-              child: Text(pathParts[i], style: const TextStyle(color: Colors.blue)),
+              child: Text(
+                pathParts[i],
+                style: const TextStyle(color: Colors.blue),
+              ),
             ),
           );
         }
       }
 
-      pathWidget = Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: breadcrumbs);
+      pathWidget = Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: breadcrumbs,
+      );
     }
 
     return DropTarget(
@@ -266,13 +317,19 @@ class FileListView extends HookConsumerWidget {
         dragging.value = false;
         // Handle file upload
         for (final file in details.files) {
-          final universalFile = UniversalFile(data: file, type: UniversalFileType.file, displayName: file.name);
+          final universalFile = UniversalFile(
+            data: file,
+            type: UniversalFileType.file,
+            displayName: file.name,
+          );
 
           final completer = ref
               .read(driveFileUploaderProvider)
               .createCloudFile(
                 fileData: universalFile,
-                path: mode.value == FileListMode.normal ? currentPath.value : null,
+                path: mode.value == FileListMode.normal
+                    ? currentPath.value
+                    : null,
                 poolId: selectedPool.value?.id,
                 onProgress: (progress, _) {
                   // Progress is handled by the upload tasks system
@@ -300,7 +357,9 @@ class FileListView extends HookConsumerWidget {
         dragging.value = false;
       },
       child: Container(
-        color: dragging.value ? Theme.of(context).primaryColor.withOpacity(0.1) : null,
+        color: dragging.value
+            ? Theme.of(context).primaryColor.withOpacity(0.1)
+            : null,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -312,7 +371,10 @@ class FileListView extends HookConsumerWidget {
               child: Row(
                 children: [
                   Expanded(
-                    child: AbsorbPointer(absorbing: isRefreshing, child: pathWidget),
+                    child: AbsorbPointer(
+                      absorbing: isRefreshing,
+                      child: pathWidget,
+                    ),
                   ),
                   const Gap(12),
                   SegmentedButton<FileListViewMode>(
@@ -357,19 +419,30 @@ class FileListView extends HookConsumerWidget {
 
             if (mode.value == FileListMode.unindexed && recycled.value)
               _buildClearRecycledButton(ref).padding(horizontal: 8),
-            if (isRefreshing) const LinearProgressIndicator(minHeight: 4).padding(horizontal: 16, top: 6, bottom: 4),
+            if (isRefreshing)
+              const LinearProgressIndicator(
+                minHeight: 4,
+              ).padding(horizontal: 16, top: 6, bottom: 4),
             const Gap(8),
             Expanded(
-              child: CustomScrollView(
-                slivers: [bodyWidget, const SliverGap(12)],
-              ).padding(horizontal: viewMode.value == FileListViewMode.waterfall ? 12 : null),
+              child:
+                  CustomScrollView(
+                    slivers: [bodyWidget, const SliverGap(12)],
+                  ).padding(
+                    horizontal: viewMode.value == FileListViewMode.waterfall
+                        ? 12
+                        : null,
+                  ),
             ),
             if (isSelectionMode.value)
               Material(
                 color: Theme.of(context).colorScheme.surfaceContainer,
                 elevation: 8,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                   child: Row(
                     children: [
                       TextButton(
@@ -392,7 +465,9 @@ class FileListView extends HookConsumerWidget {
                               )
                               .toSet();
 
-                          if (allIds.difference(selectedFileIds.value).isEmpty) {
+                          if (allIds
+                              .difference(selectedFileIds.value)
+                              .isEmpty) {
                             // All items are selected, deselect all
                             selectedFileIds.value.clear();
                           } else {
@@ -421,8 +496,12 @@ class FileListView extends HookConsumerWidget {
                       const Spacer(),
                       Text(
                         selectedFileIds.value.length == 1
-                            ? 'fileSelected'.tr(args: [selectedFileIds.value.length.toString()])
-                            : 'filesSelected'.tr(args: [selectedFileIds.value.length.toString()]),
+                            ? 'fileSelected'.tr(
+                                args: [selectedFileIds.value.length.toString()],
+                              )
+                            : 'filesSelected'.tr(
+                                args: [selectedFileIds.value.length.toString()],
+                              ),
                       ),
                       const Spacer(),
                       ElevatedButton.icon(
@@ -440,12 +519,12 @@ class FileListView extends HookConsumerWidget {
                                   showLoadingModal(context);
                                 }
                                 try {
-                                  final client = ref.read(solarNetworkClientProvider).dio;
-                                  final resp = await client.post(
-                                    '/drive/files/batches/delete',
-                                    data: {'file_ids': selectedFileIds.value.toList()},
+                                  final uploader = ref.read(
+                                    driveFileUploaderProvider,
                                   );
-                                  final count = resp.data['count'] as int;
+                                  final count = await uploader.batchDeleteFiles(
+                                    selectedFileIds.value.toList(),
+                                  );
                                   selectedFileIds.value.clear();
                                   isSelectionMode.value = false;
                                   ref.invalidate(
@@ -453,9 +532,15 @@ class FileListView extends HookConsumerWidget {
                                         ? indexedCloudFileListProvider
                                         : unindexedFileListProvider,
                                   );
-                                  showSnackBar('deletedFilesCount'.tr(args: [count.toString()]));
+                                  showSnackBar(
+                                    'deletedFilesCount'.tr(
+                                      args: [count.toString()],
+                                    ),
+                                  );
                                 } catch (e) {
-                                  showSnackBar('failedToDeleteSelectedFiles'.tr());
+                                  showSnackBar(
+                                    'failedToDeleteSelectedFiles'.tr(),
+                                  );
                                 } finally {
                                   if (context.mounted) {
                                     hideLoadingModal(context);
@@ -485,7 +570,11 @@ class FileListView extends HookConsumerWidget {
     ValueNotifier<List<FileListItem>> currentVisibleItems,
     Widget footer,
   ) {
-    currentVisibleItems.value = items;
+    if (currentVisibleItems.value != items) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        currentVisibleItems.value = items;
+      });
+    }
     return switch (currentViewMode.value) {
       // Waterfall mode
       FileListViewMode.waterfall => SliverMasonryGrid(
@@ -512,13 +601,16 @@ class FileListView extends HookConsumerWidget {
               selectedFileIds.value.contains(fileItem.file.id),
               () {
                 if (selectedFileIds.value.contains(fileItem.file.id)) {
-                  selectedFileIds.value = Set.from(selectedFileIds.value)..remove(fileItem.file.id);
+                  selectedFileIds.value = Set.from(selectedFileIds.value)
+                    ..remove(fileItem.file.id);
                 } else {
-                  selectedFileIds.value = Set.from(selectedFileIds.value)..add(fileItem.file.id);
+                  selectedFileIds.value = Set.from(selectedFileIds.value)
+                    ..add(fileItem.file.id);
                 }
               },
             ),
-            folder: (folderItem) => _buildWaterfallFolderTile(folderItem, currentPath, context),
+            folder: (folderItem) =>
+                _buildWaterfallFolderTile(folderItem, currentPath, context),
             unindexedFile: (unindexedFileItem) {
               // Should not happen
               return const SizedBox.shrink();
@@ -543,25 +635,39 @@ class FileListView extends HookConsumerWidget {
               selectedFileIds.value.contains(fileItem.file.id),
               () {
                 if (selectedFileIds.value.contains(fileItem.file.id)) {
-                  selectedFileIds.value = Set.from(selectedFileIds.value)..remove(fileItem.file.id);
+                  selectedFileIds.value = Set.from(selectedFileIds.value)
+                    ..remove(fileItem.file.id);
                 } else {
-                  selectedFileIds.value = Set.from(selectedFileIds.value)..add(fileItem.file.id);
+                  selectedFileIds.value = Set.from(selectedFileIds.value)
+                    ..add(fileItem.file.id);
                 }
               },
             ),
-            folder: (folderItem) => ListTile(
-              leading: ClipRRect(
-                borderRadius: const BorderRadius.all(Radius.circular(8)),
-                child: SizedBox(height: 48, width: 48, child: const Icon(Symbols.folder, fill: 1).center()),
-              ),
-              title: Text(folderItem.folderName, maxLines: 1, overflow: TextOverflow.ellipsis),
-              subtitle: Text('folder').tr(),
+            folder: (folderItem) => InkWell(
               onTap: () {
                 final newPath = currentPath.value == '/'
-                    ? '/${folderItem.folderName}'
-                    : '${currentPath.value}/${folderItem.folderName}';
+                    ? '/${folderItem.file.name}'
+                    : '${currentPath.value}/${folderItem.file.name}';
                 currentPath.value = newPath;
               },
+              onLongPress: () => onInspectFile(folderItem.file),
+              onSecondaryTap: () => onInspectFile(folderItem.file),
+              child: ListTile(
+                leading: ClipRRect(
+                  borderRadius: const BorderRadius.all(Radius.circular(8)),
+                  child: SizedBox(
+                    height: 48,
+                    width: 48,
+                    child: const Icon(Symbols.folder, fill: 1).center(),
+                  ),
+                ),
+                title: Text(
+                  folderItem.file.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text('folder').tr(),
+              ),
             ),
             unindexedFile: (unindexedFileItem) {
               // Should not happen in normal mode
@@ -573,7 +679,10 @@ class FileListView extends HookConsumerWidget {
     };
   }
 
-  Widget _buildEmptyDirectoryHint(WidgetRef ref, ValueNotifier<String> currentPath) {
+  Widget _buildEmptyDirectoryHint(
+    WidgetRef ref,
+    ValueNotifier<String> currentPath,
+  ) {
     return Card(
       margin: viewMode.value == FileListViewMode.waterfall
           ? const EdgeInsets.fromLTRB(0, 0, 0, 16)
@@ -597,7 +706,11 @@ class FileListView extends HookConsumerWidget {
             Text(
               'emptyDirectoryHint',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Theme.of(ref.context).textTheme.bodyMedium?.color?.withOpacity(0.7)),
+              style: TextStyle(
+                color: Theme.of(
+                  ref.context,
+                ).textTheme.bodyMedium?.color?.withOpacity(0.7),
+              ),
             ).tr(),
             const Gap(16),
             SingleChildScrollView(
@@ -612,7 +725,7 @@ class FileListView extends HookConsumerWidget {
                   ),
                   const Gap(12),
                   OutlinedButton.icon(
-                    onPressed: () => onShowCreateDirectory(ref.context, currentPath),
+                    onPressed: onShowCreateFolder,
                     icon: const Icon(Symbols.create_new_folder),
                     label: Text('createDirectory').tr(),
                   ),
@@ -642,15 +755,19 @@ class FileListView extends HookConsumerWidget {
         IconButton(
           icon: const Icon(Symbols.delete),
           onPressed: () async {
-            final confirmed = await showConfirmAlert('confirmDeleteFile'.tr(), 'deleteFile'.tr(), isDanger: true);
+            final confirmed = await showConfirmAlert(
+              'confirmDeleteFile'.tr(),
+              'deleteFile'.tr(),
+              isDanger: true,
+            );
             if (!confirmed) return;
 
             if (context.mounted) {
               showLoadingModal(context);
             }
             try {
-              final client = ref.read(solarNetworkClientProvider).dio;
-              await client.delete('/drive/files/${fileItem.file.id}');
+              final uploader = ref.read(driveFileUploaderProvider);
+              await uploader.deleteFile(fileItem.file.id);
               ref.invalidate(indexedCloudFileListProvider);
             } catch (e) {
               showSnackBar('failedToDeleteFile'.tr());
@@ -678,15 +795,22 @@ class FileListView extends HookConsumerWidget {
     bool isSelected,
     VoidCallback? toggleSelection,
   ) {
-    final meta = file.fileMeta is Map ? (file.fileMeta as Map) : const {};
-    final ratio = meta['ratio'] is num ? (meta['ratio'] as num).toDouble() : 1.0;
-    final itemType = file.mimeType?.split('/').first;
-    final uri = '${ref.read(solarNetworkClientProvider).dio.options.baseUrl}/drive/files/${file.id}';
+    final meta = file.fileMeta;
+    final ratio = meta['ratio'] is num
+        ? (meta['ratio'] as num).toDouble()
+        : 1.0;
+    final itemType = file.mimeType.split('/').first;
+    final uri =
+        '${ref.read(solarNetworkClientProvider).dio.options.baseUrl}/drive/files/${file.id}';
 
     Widget previewWidget;
     switch (itemType) {
       case 'image':
-        previewWidget = CloudImageWidget(file: file, aspectRatio: ratio, fit: BoxFit.cover);
+        previewWidget = CloudImageWidget(
+          file: file,
+          aspectRatio: ratio,
+          fit: BoxFit.cover,
+        );
         break;
       case 'video':
         previewWidget = CloudVideoWidget(item: file);
@@ -698,13 +822,20 @@ class FileListView extends HookConsumerWidget {
         previewWidget = Container(
           color: Theme.of(context).colorScheme.surfaceContainer,
           child: FutureBuilder<String>(
-            future: ref.read(solarNetworkClientProvider).dio.get(uri).then((response) => response.data as String),
+            future: ref
+                .read(solarNetworkClientProvider)
+                .dio
+                .get(uri)
+                .then((response) => response.data as String),
             builder: (context, snapshot) => snapshot.hasData
                 ? SingleChildScrollView(
                     padding: EdgeInsets.all(24),
                     child: Text(
                       snapshot.data!,
-                      style: const TextStyle(fontSize: 9, fontFamily: 'monospace'),
+                      style: const TextStyle(
+                        fontSize: 9,
+                        fontFamily: 'monospace',
+                      ),
                       maxLines: 20,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -727,15 +858,22 @@ class FileListView extends HookConsumerWidget {
           context.router.pushPath(getRoutePath());
         }
       },
+      onLongPress: () => onInspectFile(file),
+      onSecondaryTap: () => onInspectFile(file),
       child: Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Theme.of(context).colorScheme.outline.withOpacity(0.3)),
+          border: Border.all(
+            color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+          ),
         ),
         child: Column(
           children: [
             ClipRRect(
-              borderRadius: BorderRadius.only(topLeft: Radius.circular(8), topRight: Radius.circular(8)),
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(8),
+                topRight: Radius.circular(8),
+              ),
               child: AspectRatio(
                 aspectRatio: ratio,
                 child: ClipRRect(
@@ -747,7 +885,10 @@ class FileListView extends HookConsumerWidget {
             Row(
               children: [
                 if (isSelectionMode)
-                  Checkbox(value: isSelected, onChanged: (value) => toggleSelection?.call())
+                  Checkbox(
+                    value: isSelected,
+                    onChanged: (value) => toggleSelection?.call(),
+                  )
                 else
                   getFileIcon(file, size: 24, tinyPreview: false),
                 const Gap(16),
@@ -755,11 +896,17 @@ class FileListView extends HookConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(file.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      Text(
+                        file.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                       Text(
                         formatFileSize(file.size),
                         maxLines: 1,
-                        style: Theme.of(context).textTheme.bodySmall!.copyWith(fontSize: 11),
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodySmall!.copyWith(fontSize: 11),
                       ),
                     ],
                   ),
@@ -773,33 +920,48 @@ class FileListView extends HookConsumerWidget {
     );
   }
 
-  Widget _buildWaterfallFolderTile(FolderItem folderItem, ValueNotifier<String> currentPath, BuildContext context) {
+  Widget _buildWaterfallFolderTile(
+    FolderItem folderItem,
+    ValueNotifier<String> currentPath,
+    BuildContext context,
+  ) {
     return InkWell(
       borderRadius: BorderRadius.circular(8),
       onTap: () {
         final newPath = currentPath.value == '/'
-            ? '/${folderItem.folderName}'
-            : '${currentPath.value}/${folderItem.folderName}';
+            ? '/${folderItem.file.name}'
+            : '${currentPath.value}/${folderItem.file.name}';
         currentPath.value = newPath;
       },
+      onLongPress: () => onInspectFile(folderItem.file),
+      onSecondaryTap: () => onInspectFile(folderItem.file),
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Theme.of(context).colorScheme.outline.withOpacity(0.3)),
+          border: Border.all(
+            color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+          ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Icon(Symbols.folder, fill: 1, size: 24, color: Theme.of(context).colorScheme.primaryFixedDim),
+            Icon(
+              Symbols.folder,
+              fill: 1,
+              size: 24,
+              color: Theme.of(context).colorScheme.primaryFixedDim,
+            ),
             const Gap(16),
             Text(
-              folderItem.folderName,
+              folderItem.file.name,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w500),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w500),
             ),
           ],
         ),
@@ -817,7 +979,11 @@ class FileListView extends HookConsumerWidget {
     ValueNotifier<List<FileListItem>> currentVisibleItems,
     Widget footer,
   ) {
-    currentVisibleItems.value = items;
+    if (currentVisibleItems.value != items) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        currentVisibleItems.value = items;
+      });
+    }
     return switch (currentViewMode.value) {
       // Waterfall mode
       FileListViewMode.waterfall => SliverMasonryGrid(
@@ -844,20 +1010,25 @@ class FileListView extends HookConsumerWidget {
               // Should not happen in unindexed mode
               return const SizedBox.shrink();
             },
-            unindexedFile: (unindexedFileItem) => _buildWaterfallUnindexedFileTile(
-              unindexedFileItem,
-              ref,
-              context,
-              isSelectionMode.value,
-              selectedFileIds.value.contains(unindexedFileItem.file.id),
-              () {
-                if (selectedFileIds.value.contains(unindexedFileItem.file.id)) {
-                  selectedFileIds.value = Set.from(selectedFileIds.value)..remove(unindexedFileItem.file.id);
-                } else {
-                  selectedFileIds.value = Set.from(selectedFileIds.value)..add(unindexedFileItem.file.id);
-                }
-              },
-            ),
+            unindexedFile: (unindexedFileItem) =>
+                _buildWaterfallUnindexedFileTile(
+                  unindexedFileItem,
+                  ref,
+                  context,
+                  isSelectionMode.value,
+                  selectedFileIds.value.contains(unindexedFileItem.file.id),
+                  () {
+                    if (selectedFileIds.value.contains(
+                      unindexedFileItem.file.id,
+                    )) {
+                      selectedFileIds.value = Set.from(selectedFileIds.value)
+                        ..remove(unindexedFileItem.file.id);
+                    } else {
+                      selectedFileIds.value = Set.from(selectedFileIds.value)
+                        ..add(unindexedFileItem.file.id);
+                    }
+                  },
+                ),
           );
         }, childCount: items.length + 1),
       ),
@@ -886,9 +1057,11 @@ class FileListView extends HookConsumerWidget {
               selectedFileIds.value.contains(unindexedFileItem.file.id),
               () {
                 if (selectedFileIds.value.contains(unindexedFileItem.file.id)) {
-                  selectedFileIds.value = Set.from(selectedFileIds.value)..remove(unindexedFileItem.file.id);
+                  selectedFileIds.value = Set.from(selectedFileIds.value)
+                    ..remove(unindexedFileItem.file.id);
                 } else {
-                  selectedFileIds.value = Set.from(selectedFileIds.value)..add(unindexedFileItem.file.id);
+                  selectedFileIds.value = Set.from(selectedFileIds.value)
+                    ..add(unindexedFileItem.file.id);
                 }
               },
             ),
@@ -911,10 +1084,18 @@ class FileListView extends HookConsumerWidget {
       leading: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (isSelectionMode) Checkbox(value: isSelected, onChanged: (value) => toggleSelection()),
+          if (isSelectionMode)
+            Checkbox(
+              value: isSelected,
+              onChanged: (value) => toggleSelection(),
+            ),
           ClipRRect(
             borderRadius: const BorderRadius.all(Radius.circular(8)),
-            child: SizedBox(height: 48, width: 48, child: getFileIcon(file, size: 24)),
+            child: SizedBox(
+              height: 48,
+              width: 48,
+              child: getFileIcon(file, size: 24),
+            ),
           ),
         ],
       ),
@@ -926,21 +1107,25 @@ class FileListView extends HookConsumerWidget {
         if (isSelectionMode) {
           toggleSelection();
         } else {
-          context.router.push(FileDetailRoute(item: file));
+          context.router.push(FileDetailRoute(id: file.id));
         }
       },
       trailing: IconButton(
         icon: const Icon(Symbols.delete),
         onPressed: () async {
-          final confirmed = await showConfirmAlert('confirmDeleteFile'.tr(), 'deleteFile'.tr(), isDanger: true);
+          final confirmed = await showConfirmAlert(
+            'confirmDeleteFile'.tr(),
+            'deleteFile'.tr(),
+            isDanger: true,
+          );
           if (!confirmed) return;
 
           if (context.mounted) {
             showLoadingModal(context);
           }
           try {
-            final client = ref.read(solarNetworkClientProvider).dio;
-            await client.delete('/drive/files/${fileItem.file.id}');
+            final uploader = ref.read(driveFileUploaderProvider);
+            await uploader.deleteFile(fileItem.file.id);
             ref.invalidate(indexedCloudFileListProvider);
           } catch (e) {
             showSnackBar('failedToDeleteFile'.tr());
@@ -967,10 +1152,18 @@ class FileListView extends HookConsumerWidget {
       leading: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (isSelectionMode) Checkbox(value: isSelected, onChanged: (value) => toggleSelection()),
+          if (isSelectionMode)
+            Checkbox(
+              value: isSelected,
+              onChanged: (value) => toggleSelection(),
+            ),
           ClipRRect(
             borderRadius: const BorderRadius.all(Radius.circular(8)),
-            child: SizedBox(height: 48, width: 48, child: getFileIcon(file, size: 24)),
+            child: SizedBox(
+              height: 48,
+              width: 48,
+              child: getFileIcon(file, size: 24),
+            ),
           ),
         ],
       ),
@@ -982,21 +1175,25 @@ class FileListView extends HookConsumerWidget {
         if (isSelectionMode) {
           toggleSelection();
         } else {
-          context.router.push(FileDetailRoute(item: file));
+          context.router.push(FileDetailRoute(id: file.id));
         }
       },
       trailing: IconButton(
         icon: const Icon(Symbols.delete),
         onPressed: () async {
-          final confirmed = await showConfirmAlert('confirmDeleteFile'.tr(), 'deleteFile'.tr(), isDanger: true);
+          final confirmed = await showConfirmAlert(
+            'confirmDeleteFile'.tr(),
+            'deleteFile'.tr(),
+            isDanger: true,
+          );
           if (!confirmed) return;
 
           if (context.mounted) {
             showLoadingModal(context);
           }
           try {
-            final client = ref.read(solarNetworkClientProvider).dio;
-            await client.delete('/drive/files/${file.id}');
+            final uploader = ref.read(driveFileUploaderProvider);
+            await uploader.deleteFile(file.id);
             ref.invalidate(unindexedFileListProvider);
           } catch (e) {
             showSnackBar('failedToDeleteFile'.tr());
@@ -1027,15 +1224,19 @@ class FileListView extends HookConsumerWidget {
         IconButton(
           icon: const Icon(Symbols.delete),
           onPressed: () async {
-            final confirmed = await showConfirmAlert('confirmDeleteFile'.tr(), 'deleteFile'.tr(), isDanger: true);
+            final confirmed = await showConfirmAlert(
+              'confirmDeleteFile'.tr(),
+              'deleteFile'.tr(),
+              isDanger: true,
+            );
             if (!confirmed) return;
 
             if (context.mounted) {
               showLoadingModal(context);
             }
             try {
-              final client = ref.read(solarNetworkClientProvider).dio;
-              await client.delete('/drive/files/${unindexedFileItem.file.id}');
+              final uploader = ref.read(driveFileUploaderProvider);
+              await uploader.deleteFile(unindexedFileItem.file.id);
               ref.invalidate(unindexedFileListProvider);
             } catch (e) {
               showSnackBar('failedToDeleteFile'.tr());
@@ -1055,7 +1256,9 @@ class FileListView extends HookConsumerWidget {
 
   Widget _buildEmptyUnindexedFilesHint(WidgetRef ref) {
     return Card(
-      margin: viewMode.value == FileListViewMode.waterfall ? EdgeInsets.zero : const EdgeInsets.fromLTRB(12, 0, 12, 0),
+      margin: viewMode.value == FileListViewMode.waterfall
+          ? EdgeInsets.zero
+          : const EdgeInsets.fromLTRB(12, 0, 12, 0),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
         child: Column(
@@ -1075,7 +1278,11 @@ class FileListView extends HookConsumerWidget {
             Text(
               'emptyDirectoryHint',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Theme.of(ref.context).textTheme.bodyMedium?.color?.withOpacity(0.7)),
+              style: TextStyle(
+                color: Theme.of(
+                  ref.context,
+                ).textTheme.bodyMedium?.color?.withOpacity(0.7),
+              ),
             ).tr(),
           ],
         ),
@@ -1104,17 +1311,21 @@ class FileListView extends HookConsumerWidget {
               icon: const Icon(Symbols.delete_forever),
               label: Text('clear').tr(),
               onPressed: () async {
-                final confirmed = await showConfirmAlert('confirmClearRecycledFiles'.tr(), 'clearRecycledFiles'.tr());
+                final confirmed = await showConfirmAlert(
+                  'confirmClearRecycledFiles'.tr(),
+                  'clearRecycledFiles'.tr(),
+                );
                 if (!confirmed) return;
 
                 if (ref.context.mounted) {
                   showLoadingModal(ref.context);
                 }
                 try {
-                  final client = ref.read(solarNetworkClientProvider).dio;
-                  final response = await client.delete('/drive/files/me/recycle');
-                  final count = response.data['count'] as int? ?? 0;
-                  showSnackBar('clearedRecycledFilesCount'.tr(args: [count.toString()]));
+                  final uploader = ref.read(driveFileUploaderProvider);
+                  final count = await uploader.deleteRecycledFiles();
+                  showSnackBar(
+                    'clearedRecycledFilesCount'.tr(args: [count.toString()]),
+                  );
                   ref.invalidate(unindexedFileListProvider);
                 } catch (e) {
                   showSnackBar('failedToClearRecycledFiles'.tr());
@@ -1154,7 +1365,11 @@ class FileListView extends HookConsumerWidget {
             height: 32,
             padding: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(
-              border: Border.all(color: Theme.of(ref.context).colorScheme.outline.withOpacity(0.5)),
+              border: Border.all(
+                color: Theme.of(
+                  ref.context,
+                ).colorScheme.outline.withOpacity(0.5),
+              ),
               borderRadius: BorderRadius.circular(8),
             ),
             child: DropdownButtonHideUnderline(
@@ -1170,7 +1385,12 @@ class FileListView extends HookConsumerWidget {
                         Icon(Symbols.schedule, size: 16),
                         Text('date', style: const TextStyle(fontSize: 12)).tr(),
                         if (order.value == 'date')
-                          Icon(orderDesc.value ? Symbols.arrow_downward : Symbols.arrow_upward, size: 14),
+                          Icon(
+                            orderDesc.value
+                                ? Symbols.arrow_downward
+                                : Symbols.arrow_upward,
+                            size: 14,
+                          ),
                       ],
                     ),
                   ),
@@ -1181,9 +1401,17 @@ class FileListView extends HookConsumerWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(Symbols.data_usage, size: 16),
-                        Text('fileSize'.tr(), style: const TextStyle(fontSize: 12)),
+                        Text(
+                          'fileSize'.tr(),
+                          style: const TextStyle(fontSize: 12),
+                        ),
                         if (order.value == 'size')
-                          Icon(orderDesc.value ? Symbols.arrow_downward : Symbols.arrow_upward, size: 16),
+                          Icon(
+                            orderDesc.value
+                                ? Symbols.arrow_downward
+                                : Symbols.arrow_upward,
+                            size: 16,
+                          ),
                       ],
                     ),
                   ),
@@ -1194,9 +1422,17 @@ class FileListView extends HookConsumerWidget {
                       spacing: 6,
                       children: [
                         Icon(Symbols.sort_by_alpha, size: 16),
-                        Text('fileName'.tr(), style: const TextStyle(fontSize: 12)),
+                        Text(
+                          'fileName'.tr(),
+                          style: const TextStyle(fontSize: 12),
+                        ),
                         if (order.value == 'name')
-                          Icon(orderDesc.value ? Symbols.arrow_downward : Symbols.arrow_upward, size: 16),
+                          Icon(
+                            orderDesc.value
+                                ? Symbols.arrow_downward
+                                : Symbols.arrow_upward,
+                            size: 16,
+                          ),
                       ],
                     ),
                   ),

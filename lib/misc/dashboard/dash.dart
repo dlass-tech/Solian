@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -10,7 +11,6 @@ import 'package:gap/gap.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:island/accounts/widgets/account/account_name.dart';
-import 'package:island/accounts/widgets/account/fortune_graph.dart';
 import 'package:island/accounts/widgets/account/friends_overview.dart';
 import 'package:island/chat/pods/chat_room.dart';
 import 'package:island/chat/pods/chat_summary.dart';
@@ -58,20 +58,7 @@ class DashboardRenderer {
       case 'checkIn':
         return CheckInWidget(margin: EdgeInsets.zero);
       case 'fortuneGraph':
-        return Card(
-          margin: EdgeInsets.zero,
-          child: FortuneGraphWidget(
-            events: ref.watch(
-              eventCalendarProvider(
-                EventCalendarQuery(
-                  uname: 'me',
-                  year: DateTime.now().year,
-                  month: DateTime.now().month,
-                ),
-              ),
-            ),
-          ),
-        );
+        return const TodayOracleCard();
       case 'fortuneCard':
         return FortuneCard(unlimited: true);
       case 'postFeatured':
@@ -100,20 +87,7 @@ class DashboardRenderer {
             spacing: 16,
             children: [
               CheckInWidget(margin: EdgeInsets.zero),
-              Card(
-                margin: EdgeInsets.zero,
-                child: FortuneGraphWidget(
-                  events: ref.watch(
-                    eventCalendarProvider(
-                      EventCalendarQuery(
-                        uname: 'me',
-                        year: DateTime.now().year,
-                        month: DateTime.now().month,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+              const TodayOracleCard(),
               Expanded(child: FortuneCard()),
             ],
           ),
@@ -240,20 +214,24 @@ class DashboardGrid extends HookConsumerWidget {
                 if (userInfo.value != null)
                   Expanded(
                     child:
-                        SingleChildScrollView(
-                          padding: isWide
-                              ? const EdgeInsets.symmetric(horizontal: 24)
-                              : const EdgeInsets.symmetric(horizontal: 16),
-                          scrollDirection: isWide
-                              ? Axis.horizontal
-                              : Axis.vertical,
-                          child: isWide
-                              ? _DashboardGridWide()
-                              : _DashboardGridNarrow(),
-                        ).clipRRect(
-                          topLeft: isWide ? 0 : 12,
-                          topRight: isWide ? 0 : 12,
-                        ),
+                        (isWide
+                                ? _HoverHorizontalScrollArea(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 24,
+                                    ),
+                                    child: _DashboardGridWide(),
+                                  )
+                                : SingleChildScrollView(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                    ),
+                                    scrollDirection: Axis.vertical,
+                                    child: _DashboardGridNarrow(),
+                                  ))
+                            .clipRRect(
+                              topLeft: isWide ? 0 : 12,
+                              topRight: isWide ? 0 : 12,
+                            ),
                   )
                 else
                   Center(
@@ -364,6 +342,151 @@ class _DashboardGridWide extends HookConsumerWidget {
     }
 
     return Row(spacing: 16, children: children);
+  }
+}
+
+class _HoverHorizontalScrollArea extends HookWidget {
+  final Widget child;
+  final EdgeInsetsGeometry? padding;
+
+  const _HoverHorizontalScrollArea({required this.child, this.padding});
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = useScrollController();
+    final isHovered = useState(false);
+    final canScrollLeft = useState(false);
+    final canScrollRight = useState(false);
+
+    void updateScrollState() {
+      if (!controller.hasClients) {
+        canScrollLeft.value = false;
+        canScrollRight.value = false;
+        return;
+      }
+
+      final position = controller.position;
+      canScrollLeft.value = position.pixels > 0;
+      canScrollRight.value = position.pixels < position.maxScrollExtent;
+    }
+
+    useEffect(() {
+      void listener() => updateScrollState();
+
+      controller.addListener(listener);
+      WidgetsBinding.instance.addPostFrameCallback((_) => updateScrollState());
+
+      return () => controller.removeListener(listener);
+    }, [controller, child, padding]);
+
+    Future<void> scrollBy(double direction) async {
+      if (!controller.hasClients) return;
+      final position = controller.position;
+      final delta = math.max(position.viewportDimension * 0.8, 280.0);
+      final target = (position.pixels + delta * direction).clamp(
+        0.0,
+        position.maxScrollExtent,
+      );
+      await controller.animateTo(
+        target,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+      );
+    }
+
+    final scrollBehavior = ScrollConfiguration.of(context).copyWith(
+      dragDevices: {PointerDeviceKind.touch, PointerDeviceKind.trackpad},
+    );
+
+    return MouseRegion(
+      onEnter: (_) => isHovered.value = true,
+      onExit: (_) => isHovered.value = false,
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: ScrollConfiguration(
+              behavior: scrollBehavior,
+              child: SingleChildScrollView(
+                controller: controller,
+                padding: padding,
+                scrollDirection: Axis.horizontal,
+                child: child,
+              ),
+            ),
+          ),
+          Positioned(
+            left: 12,
+            top: 0,
+            bottom: 0,
+            child: Center(
+              child: _AnimatedDashboardScrollArrow(
+                icon: Symbols.chevron_left,
+                isVisible: isHovered.value && canScrollLeft.value,
+                hiddenOffset: const Offset(-0.4, 0),
+                onTap: () => scrollBy(-1),
+              ),
+            ),
+          ),
+          Positioned(
+            right: 12,
+            top: 0,
+            bottom: 0,
+            child: Center(
+              child: _AnimatedDashboardScrollArrow(
+                icon: Symbols.chevron_right,
+                isVisible: isHovered.value && canScrollRight.value,
+                hiddenOffset: const Offset(0.4, 0),
+                onTap: () => scrollBy(1),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AnimatedDashboardScrollArrow extends StatelessWidget {
+  final IconData icon;
+  final bool isVisible;
+  final Offset hiddenOffset;
+  final VoidCallback onTap;
+
+  const _AnimatedDashboardScrollArrow({
+    required this.icon,
+    required this.isVisible,
+    required this.hiddenOffset,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      ignoring: !isVisible,
+      child: AnimatedSlide(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+        offset: isVisible ? Offset.zero : hiddenOffset,
+        child: AnimatedOpacity(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          opacity: isVisible ? 1 : 0,
+          child: Material(
+            color: Colors.black45,
+            shape: const CircleBorder(),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: onTap,
+              child: SizedBox(
+                width: 40,
+                height: 40,
+                child: Icon(icon, color: Colors.white, size: 20),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -769,10 +892,7 @@ class ChatListCard extends HookConsumerWidget {
                       room: room,
                       isDirect: room.type == 1,
                       onTap: () {
-                        context.router.pushAll([
-                          const ChatListRoute(),
-                          ChatRoomRoute(id: room.id),
-                        ]);
+                        context.router.navigate(ChatRoomRoute(id: room.id));
                       },
                     );
                   }).toList(),
@@ -834,6 +954,230 @@ class FortuneCard extends HookConsumerWidget {
   }
 }
 
+class TodayOracleCard extends ConsumerWidget {
+  const TodayOracleCard({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final todayResult = ref.watch(checkInResultTodayProvider);
+    final theme = Theme.of(context);
+
+    return Card(
+      margin: EdgeInsets.zero,
+      child: todayResult.when(
+        loading: () => Center(
+          child: ConfuseSpinner(
+            size: 36,
+            speed: 6,
+            color: theme.colorScheme.onSurfaceVariant.withOpacity(0.65),
+          ),
+        ).padding(vertical: 16),
+        error: (error, _) => Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text(
+            error.toString(),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        data: (result) {
+          final report = result?.fortuneReport;
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Symbols.temple_buddhist,
+                    size: 20,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'checkInTodayOracle'.tr(),
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ).padding(horizontal: 16, vertical: 12),
+              if (result == null)
+                Text(
+                  'checkInViewTemple'.tr(),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ).padding(horizontal: 16, bottom: 16)
+              else ...[
+                Text(
+                  'checkInResultLevel${result.level}'.tr(),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.primary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ).padding(horizontal: 16),
+                if (report != null) ...[
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _OracleMetaChip(
+                        icon: Symbols.palette,
+                        text: report.luckyColor,
+                      ),
+                      _OracleMetaChip(
+                        icon: Symbols.schedule,
+                        text: report.luckyTime,
+                      ),
+                      _OracleMetaChip(
+                        icon: Symbols.explore,
+                        text: report.luckyDirection,
+                      ),
+                    ],
+                  ).padding(horizontal: 12),
+                  if (result.tips.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Row(
+                        children: [
+                          if (result.tips.any((t) => t.isPositive)) ...[
+                            Icon(
+                              Symbols.thumb_up,
+                              size: 14,
+                              color: theme.colorScheme.primary,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                result.tips
+                                    .where((t) => t.isPositive)
+                                    .map((t) => t.title)
+                                    .join(' · '),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.bodySmall,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    if (result.tips.any((t) => !t.isPositive))
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 4,
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Symbols.thumb_down,
+                              size: 14,
+                              color: theme.colorScheme.error,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                result.tips
+                                    .where((t) => !t.isPositive)
+                                    .map((t) => t.title)
+                                    .join(' · '),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.bodySmall,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                  const SizedBox(height: 12),
+                  _OracleActionRow(
+                    icon: Symbols.task_alt,
+                    text: report.luckyAction,
+                    color: theme.colorScheme.primary,
+                  ).padding(horizontal: 16),
+                  const SizedBox(height: 8),
+                  _OracleActionRow(
+                    icon: Symbols.block,
+                    text: report.avoidAction,
+                    color: theme.colorScheme.error,
+                  ).padding(horizontal: 16),
+                ],
+                const SizedBox(height: 16),
+              ],
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _OracleMetaChip extends StatelessWidget {
+  final IconData icon;
+  final String text;
+
+  const _OracleMetaChip({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: theme.colorScheme.primary),
+          const SizedBox(width: 6),
+          Text(text, style: theme.textTheme.bodySmall),
+        ],
+      ),
+    );
+  }
+}
+
+class _OracleActionRow extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  final Color color;
+
+  const _OracleActionRow({
+    required this.icon,
+    required this.text,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 16, color: color),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall?.copyWith(height: 1.4),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _UnauthorizedCard extends HookConsumerWidget {
   final bool isWide;
   const _UnauthorizedCard({required this.isWide});
@@ -862,7 +1206,7 @@ class _UnauthorizedCard extends HookConsumerWidget {
             ),
             const Gap(16),
             Text(
-              'Welcome to\nthe Dynamic Network',
+              'Welcome to\nthe Solar Network',
               style: Theme.of(
                 context,
               ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),

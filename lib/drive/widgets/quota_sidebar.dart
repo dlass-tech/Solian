@@ -15,6 +15,7 @@ class QuotaSidebarWidget extends StatelessWidget {
   final SnFilePool? selectedPool;
   final ValueChanged<SnFilePool?>? onPoolSelected;
   final VoidCallback? onViewDetails;
+  final bool showPoolFilter;
 
   const QuotaSidebarWidget({
     super.key,
@@ -24,6 +25,7 @@ class QuotaSidebarWidget extends StatelessWidget {
     this.selectedPool,
     this.onPoolSelected,
     this.onViewDetails,
+    this.showPoolFilter = true,
   });
 
   @override
@@ -39,6 +41,7 @@ class QuotaSidebarWidget extends StatelessWidget {
     final usedQuota = nonNullUsage['used_quota'] as num? ?? 0;
     final poolUsages = nonNullUsage['pool_usages'] as List<dynamic>? ?? [];
 
+    final usedQuotaBytes = (usedQuota * 1024 * 1024).round();
     final quotaBytes = totalQuota * 1024 * 1024;
     final usageRatio = totalQuota > 0 ? usedQuota / totalQuota : 0.0;
 
@@ -67,15 +70,15 @@ class QuotaSidebarWidget extends StatelessWidget {
           const Gap(16),
 
           // Usage Progress Card
-          _buildUsageCard(context, usedBytes, quotaBytes, usageRatio),
+          _buildUsageCard(context, usedQuotaBytes, quotaBytes, usageRatio),
           const Gap(16),
 
           // Quick Stats Row
-          _buildStatsRow(context, fileCount, usedBytes),
+          _buildStatsRow(context, fileCount, usedBytes, usedQuotaBytes),
           const Gap(24),
 
           // Pool Filter Section
-          if (pools != null && pools!.isNotEmpty) ...[
+          if (showPoolFilter && pools != null && pools!.isNotEmpty) ...[
             Row(
               children: [
                 Icon(
@@ -142,7 +145,7 @@ class QuotaSidebarWidget extends StatelessWidget {
 
   Widget _buildUsageCard(
     BuildContext context,
-    int usedBytes,
+    int usedQuotaBytes,
     int quotaBytes,
     double usageRatio,
   ) {
@@ -169,16 +172,19 @@ class QuotaSidebarWidget extends StatelessWidget {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'used',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                    ).tr(),
+                    Tooltip(
+                      message: 'quotaUsageTooltip'.tr(),
+                      child: Text(
+                        'used',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ).tr(),
+                    ),
                     const Gap(2),
                     Text(
-                      formatFileSize(usedBytes),
+                      formatFileSize(usedQuotaBytes),
                       style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
@@ -278,23 +284,36 @@ class QuotaSidebarWidget extends StatelessWidget {
     return Colors.red;
   }
 
-  Widget _buildStatsRow(BuildContext context, int fileCount, int usedBytes) {
+  Widget _buildStatsRow(
+    BuildContext context,
+    int fileCount,
+    int usedBytes,
+    int usedQuotaBytes,
+  ) {
     return Row(
       children: [
-        Expanded(
-          child: _buildStatItem(
-            context,
-            Symbols.insert_drive_file,
-            fileCount.toString(),
-            'files',
-          ),
-        ),
         Expanded(
           child: _buildStatItem(
             context,
             Symbols.data_usage,
             formatFileSize(usedBytes),
             'totalSize',
+          ),
+        ),
+        Expanded(
+          child: _buildStatItem(
+            context,
+            Symbols.pie_chart,
+            formatFileSize(usedQuotaBytes),
+            'usedQuota',
+          ),
+        ),
+        Expanded(
+          child: _buildStatItem(
+            context,
+            Symbols.insert_drive_file,
+            fileCount.toString(),
+            'files',
           ),
         ),
       ],

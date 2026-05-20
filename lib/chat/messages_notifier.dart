@@ -38,6 +38,7 @@ class MessagesNotifier extends _$MessagesNotifier {
   String? _mlsGroupId;
 
   final Map<String, LocalChatMessage> _pendingMessages = {};
+  final Map<String, SnChatMember> _membersById = {};
   String? _searchQuery;
   bool? _withLinks;
   bool? _withAttachments;
@@ -120,7 +121,6 @@ class MessagesNotifier extends _$MessagesNotifier {
     mlsGroupId: _mlsGroupId,
     isE2eeRoom: _isE2eeRoom,
   );
-
 
   bool _isSystemEventType(String type) {
     if (type.startsWith('system.')) return true;
@@ -289,8 +289,28 @@ class MessagesNotifier extends _$MessagesNotifier {
         unawaited(loadInitial(forceRemoteRefresh: false));
       },
     );
+    StreamSubscription<MlsExternalJoinStartedEvent>? e2eeStartSub;
+    StreamSubscription<MlsExternalJoinCompletedEvent>? e2eeCompleteSub;
+    StreamSubscription<MlsRecoveryFailedEvent>? e2eeFailedSub;
+    var disposed = false;
+
+    ref.onDispose(() {
+      disposed = true;
+      _realtime.stopListening();
+      e2eeStartSub?.cancel();
+      e2eeCompleteSub?.cancel();
+      e2eeFailedSub?.cancel();
+      _messageCache.clear();
+      _messageCache.clearPendingFetches();
+      _pendingCache.clear();
+    });
+
     final room = await ref.read(chatRoomProvider(roomId).future);
     final identity = await ref.read(chatRoomIdentityProvider(roomId).future);
+
+    if (disposed || !ref.mounted) {
+      return const <LocalChatMessage>[];
+    }
 
     // Initialize fetch account method for corrupted data recovery
     _fetchAccount = (String accountId) async {
@@ -309,13 +329,18 @@ class MessagesNotifier extends _$MessagesNotifier {
 
     // Defer heavy MLS operations to post-frame callback to not block initial build
     Future.microtask(() async {
+      if (disposed || !ref.mounted) return;
+
       // Set account ID for MLS operations
       if (identity != null) {
         final mlsClient = ref.read(mlsClientProvider);
         await mlsClient.setCurrentAccountId(identity.accountId);
+        if (disposed || !ref.mounted) return;
         // Fetch pending E2EE envelopes (Welcome, Commit, Proposal)
         await mlsClient.fetchAndProcessPendingEnvelopes();
       }
+
+      if (disposed || !ref.mounted) return;
 
       // Ensure MLS group is bootstrapped for E2EE rooms
       if (_isE2eeRoom) {
@@ -325,12 +350,14 @@ class MessagesNotifier extends _$MessagesNotifier {
           );
         } else {
           try {
+            if (disposed || !ref.mounted) return;
             final mlsClient = ref.read(mlsClientProvider);
 
             // Check current epoch for logging purposes
             final currentEpoch = await mlsClient.getCurrentEpoch(
               room.mlsGroupId!,
             );
+            if (disposed || !ref.mounted) return;
             Logger.root.fine(
               'Current MLS epoch for room $roomId (group: ${room.mlsGroupId}): $currentEpoch',
             );
@@ -356,15 +383,12 @@ class MessagesNotifier extends _$MessagesNotifier {
     // Allow building even if identity is null for public rooms
     if (identity != null) {
       _identity = identity;
+      _upsertMember(identity);
     }
 
     Logger.root.info('MessagesNotifier built for room $roomId');
 
     _realtime.startListening();
-
-    StreamSubscription<MlsExternalJoinStartedEvent>? e2eeStartSub;
-    StreamSubscription<MlsExternalJoinCompletedEvent>? e2eeCompleteSub;
-    StreamSubscription<MlsRecoveryFailedEvent>? e2eeFailedSub;
 
     e2eeStartSub = eventBus.on<MlsExternalJoinStartedEvent>().listen((event) {
       if (event.mlsGroupId != _mlsGroupId) return;
@@ -460,24 +484,107 @@ class MessagesNotifier extends _$MessagesNotifier {
       },
     );
 
-    ref.onDispose(() {
-      _realtime.stopListening();
-      e2eeStartSub?.cancel();
-      e2eeCompleteSub?.cancel();
-      e2eeFailedSub?.cancel();
-      _messageCache.clear();
-      _messageCache.clearPendingFetches();
-      _pendingCache.clear();
+    ref.listen<AsyncValue<SnChatMember?>>(chatRoomIdentityProvider(roomId), (
+      previous,
+      next,
+    ) {
+      next.whenData((member) {
+        if (_upsertMember(member) && ref.mounted) {
+          _emitMessages(_currentMessages);
+        }
+      });
     });
 
-    return _loadInitialMessages(forceRemoteRefresh: false);
+    return _normalizeMessageMembers(
+      await _loadInitialMessages(forceRemoteRefresh: false),
+    );
+  }
+
+  bool _upsertMember(SnChatMember? member) {
+    if (member == null) return false;
+    final existing = _membersById[member.id] ?? _membersById[member.accountId];
+    if (existing != null &&
+        !member.updatedAt.isAfter(existing.updatedAt) &&
+        existing == member) {
+      return false;
+    }
+    if (existing != null && existing.updatedAt.isAfter(member.updatedAt)) {
+      return false;
+    }
+    _membersById[member.id] = member;
+    _membersById[member.accountId] = member;
+    return true;
+  }
+
+  LocalChatMessage _copyWithSender(
+    LocalChatMessage message,
+    SnChatMember? sender,
+  ) {
+    final data = Map<String, dynamic>.from(message.data)..remove('sender');
+    return LocalChatMessage(
+      id: message.id,
+      roomId: message.roomId,
+      senderId: message.senderId,
+      sender: sender,
+      data: data,
+      createdAt: message.createdAt,
+      clientMessageId: message.clientMessageId,
+      nonce: message.nonce,
+      status: message.status,
+      content: message.content,
+      isDeleted: message.isDeleted,
+      updatedAt: message.updatedAt,
+      deletedAt: message.deletedAt,
+      type: message.type,
+      meta: message.meta,
+      membersMentioned: message.membersMentioned,
+      editedAt: message.editedAt,
+      attachments: message.attachments,
+      reactions: message.reactions,
+      repliedMessageId: message.repliedMessageId,
+      forwardedMessageId: message.forwardedMessageId,
+      localAttachments: message.localAttachments,
+    );
+  }
+
+  LocalChatMessage _normalizeMessageMember(LocalChatMessage message) {
+    final incoming = message.sender;
+    if (incoming != null) {
+      final existing = _membersById[incoming.id];
+      final canonical =
+          existing == null || incoming.updatedAt.isAfter(existing.updatedAt)
+          ? incoming
+          : existing;
+      _membersById[incoming.id] = canonical;
+      _membersById[incoming.accountId] = canonical;
+      if (!identical(message.sender, canonical) ||
+          message.data.containsKey('sender')) {
+        return _copyWithSender(message, canonical);
+      }
+      return message;
+    }
+
+    final cached = _membersById[message.senderId];
+    if (cached != null || message.data.containsKey('sender')) {
+      return _copyWithSender(message, cached);
+    }
+    return message;
+  }
+
+  List<LocalChatMessage> _normalizeMessageMembers(
+    Iterable<LocalChatMessage> messages,
+  ) {
+    final list = messages.toList();
+    for (final message in list) {
+      _upsertMember(message.sender);
+    }
+    return list.map(_normalizeMessageMember).toList();
   }
 
   List<LocalChatMessage> _sortMessages(List<LocalChatMessage> messages) {
     messages.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return messages;
   }
-
 
   Future<void> _updateStateSafely(List<LocalChatMessage> messages) async {
     if (_isUpdatingState) {
@@ -487,7 +594,7 @@ class MessagesNotifier extends _$MessagesNotifier {
     _isUpdatingState = true;
     try {
       // Ensure messages are properly sorted and deduplicated
-      final sortedMessages = _sortMessages(messages);
+      final sortedMessages = _sortMessages(_normalizeMessageMembers(messages));
       final uniqueMessages = <LocalChatMessage>[];
       final seenIds = <String>{};
       for (final message in sortedMessages) {
@@ -513,7 +620,20 @@ class MessagesNotifier extends _$MessagesNotifier {
 
   void _emitMessages(List<LocalChatMessage> messages) {
     if (!ref.mounted) return;
-    state = AsyncValue.data(_filterActiveMessages(_sortMessages(messages)));
+    state = AsyncValue.data(
+      _filterActiveMessages(_sortMessages(_normalizeMessageMembers(messages))),
+    );
+  }
+
+  void _replaceMessage(String messageId, LocalChatMessage replacement) {
+    var replaced = false;
+    final updated = _currentMessages.map((message) {
+      if (message.id != messageId) return message;
+      replaced = true;
+      return replacement;
+    }).toList();
+
+    _emitMessages(replaced ? updated : [replacement, ...updated]);
   }
 
   Future<List<LocalChatMessage>> _getCachedMessages({
@@ -583,10 +703,12 @@ class MessagesNotifier extends _$MessagesNotifier {
           finalUniqueMessages.add(message);
         }
       }
-      return _filterActiveMessages(finalUniqueMessages);
+      return _filterActiveMessages(
+        _normalizeMessageMembers(finalUniqueMessages),
+      );
     }
 
-    return _filterActiveMessages(uniqueMessages);
+    return _filterActiveMessages(_normalizeMessageMembers(uniqueMessages));
   }
 
   /// Consolidated initialization that handles pagination reset, sync, and initial load
@@ -764,7 +886,6 @@ class MessagesNotifier extends _$MessagesNotifier {
     }
   }
 
-
   void _upsertReceivedMessageInState(LocalChatMessage localMessage) {
     final isMessageUpdate =
         localMessage.type == 'messages.update' ||
@@ -835,13 +956,27 @@ class MessagesNotifier extends _$MessagesNotifier {
     List<UniversalFile> attachments, {
     SnPoll? poll,
     SnWalletFund? fund,
+    String? locationName,
+    String? locationAddress,
+    String? locationWkt,
+    String? meetId,
     SnChatMessage? editingTo,
     SnChatMessage? forwardingTo,
     SnChatMessage? replyingTo,
     Function(String, Map<int, double?>)? onProgress,
   }) async {
-    if (content.trim().isEmpty && attachments.isEmpty) return;
+    if (content.trim().isEmpty &&
+        attachments.isEmpty &&
+        poll == null &&
+        fund == null &&
+        locationName == null &&
+        locationAddress == null &&
+        locationWkt == null &&
+        meetId == null) {
+      return;
+    }
 
+    String? pendingMessageId;
     final result = await _sender.sendTextMessage(
       content: content,
       attachments: attachments,
@@ -851,15 +986,65 @@ class MessagesNotifier extends _$MessagesNotifier {
       forwardingTo: forwardingTo,
       poll: poll,
       fund: fund,
+      locationName: locationName,
+      locationAddress: locationAddress,
+      locationWkt: locationWkt,
+      meetId: meetId,
+      onPending: editingTo == null
+          ? (pending) {
+              pendingMessageId = pending.id;
+              _pendingMessages[pending.id] = pending;
+              _emitMessages([pending, ..._currentMessages]);
+            }
+          : null,
       onProgress: onProgress,
     );
 
     if (!result.success || result.message == null) {
+      if (pendingMessageId != null) {
+        final pending = _pendingMessages[pendingMessageId!];
+        if (pending != null) {
+          pending.status = MessageStatus.failed;
+          _replaceMessage(pending.id, pending);
+        }
+      }
       showErrorAlert(result.error ?? 'Failed to send message');
       return;
     }
 
-    _emitMessages([result.message!, ..._currentMessages]);
+    final sentMessage = result.message!;
+    if (pendingMessageId != null) {
+      _pendingMessages.remove(pendingMessageId);
+    }
+
+    if (editingTo != null) {
+      var replaced = false;
+      final updated = _currentMessages.map((message) {
+        if (message.id != sentMessage.id) return message;
+        replaced = true;
+        return sentMessage;
+      }).toList();
+
+      if (!replaced) {
+        updated.add(sentMessage);
+      }
+
+      final eventMessage = result.eventMessage;
+      if (eventMessage != null &&
+          _shouldIncludeInActiveList(eventMessage) &&
+          !updated.any((message) => message.id == eventMessage.id)) {
+        updated.add(eventMessage);
+      }
+
+      _emitMessages(updated);
+      return;
+    }
+
+    if (pendingMessageId != null) {
+      _replaceMessage(pendingMessageId!, sentMessage);
+    } else {
+      _emitMessages([sentMessage, ..._currentMessages]);
+    }
   }
 
   Future<void> sendVoiceMessage(
@@ -918,6 +1103,10 @@ class MessagesNotifier extends _$MessagesNotifier {
     await _realtime.processMessageDeletion(messageId);
   }
 
+  Future<void> receiveMessageDeleteEvent(SnChatMessage remoteMessage) async {
+    await _realtime.processMessageDeleteEvent(remoteMessage);
+  }
+
   Future<void> deleteMessage(String messageId) async {
     Logger.root.info('Deleting message $messageId');
 
@@ -953,7 +1142,7 @@ class MessagesNotifier extends _$MessagesNotifier {
         context: 'delete response',
       );
       if (deleteEvent != null) {
-        await receiveMessage(deleteEvent);
+        await receiveMessageDeleteEvent(deleteEvent);
       } else {
         await receiveMessageDeletion(messageId);
       }
@@ -969,13 +1158,15 @@ class MessagesNotifier extends _$MessagesNotifier {
     required int attitude,
   }) async {
     try {
-      await _apiClient.post(
+      final response = await _apiClient.post(
         '/messager/chat/$roomId/messages/$messageId/reactions',
         data: {'symbol': symbol, 'attitude': attitude},
       );
-      // Do not optimistically mutate local reaction counts here.
-      // Reactions are applied via websocket/sync events to avoid double
-      // increments (local apply + incoming reaction event).
+      await _applyLocalReactionResult(
+        messageId,
+        symbol: symbol,
+        reacted: response.statusCode != 204,
+      );
     } catch (err, stackTrace) {
       Logger.root.info(
         'Failed to react to message $messageId',
@@ -983,6 +1174,113 @@ class MessagesNotifier extends _$MessagesNotifier {
         stackTrace,
       );
       showErrorAlert(err);
+    }
+  }
+
+  Map<String, int> _extractLocalReactionCounts(LocalChatMessage message) {
+    final raw = message.data['reactions_count'];
+    if (raw is! Map) return {};
+    return Map<String, int>.fromEntries(
+      raw.entries
+          .map((entry) {
+            final value = entry.value;
+            final count = value is int
+                ? value
+                : int.tryParse(value.toString()) ?? 0;
+            return MapEntry(entry.key.toString(), count);
+          })
+          .where((entry) => entry.value > 0),
+    );
+  }
+
+  Map<String, bool> _extractLocalReactionMade(LocalChatMessage message) {
+    final raw = message.data['reactions_made'];
+    if (raw is! Map) return {};
+    return raw.map((key, value) => MapEntry(key.toString(), value == true));
+  }
+
+  LocalChatMessage _copyWithLocalReactionState(
+    LocalChatMessage message, {
+    required Map<String, int> reactionsCount,
+    required Map<String, bool> reactionsMade,
+  }) {
+    final updatedData = Map<String, dynamic>.from(message.data);
+    updatedData['reactions_count'] = reactionsCount;
+    updatedData['reactions_made'] = reactionsMade;
+
+    return LocalChatMessage(
+      id: message.id,
+      roomId: message.roomId,
+      senderId: message.senderId,
+      sender: message.sender,
+      data: updatedData,
+      createdAt: message.createdAt,
+      clientMessageId: message.clientMessageId,
+      nonce: message.nonce,
+      status: message.status,
+      content: message.content,
+      isDeleted: message.isDeleted,
+      updatedAt: message.updatedAt,
+      deletedAt: message.deletedAt,
+      type: message.type,
+      meta: message.meta,
+      membersMentioned: message.membersMentioned,
+      editedAt: message.editedAt,
+      attachments: message.attachments,
+      reactions: message.reactions,
+      repliedMessageId: message.repliedMessageId,
+      forwardedMessageId: message.forwardedMessageId,
+      localAttachments: message.localAttachments,
+    );
+  }
+
+  Future<void> _applyLocalReactionResult(
+    String messageId, {
+    required String symbol,
+    required bool reacted,
+  }) async {
+    final currentInState = _currentMessages
+        .cast<LocalChatMessage?>()
+        .firstWhere((message) => message?.id == messageId, orElse: () => null);
+    final current =
+        currentInState ?? await _repository.getLocalMessage(messageId);
+    if (current == null) return;
+
+    final reactionsCount = _extractLocalReactionCounts(current);
+    final reactionsMade = _extractLocalReactionMade(current);
+    final hadReaction = reactionsMade[symbol] == true;
+
+    // The websocket reaction event can arrive before the POST completes. Apply
+    // the server outcome idempotently so that response handling does not undo
+    // an already-applied realtime snapshot.
+    if (reacted == hadReaction) return;
+
+    if (reacted) {
+      reactionsCount[symbol] = (reactionsCount[symbol] ?? 0) + 1;
+      reactionsMade[symbol] = true;
+    } else {
+      final nextCount = (reactionsCount[symbol] ?? 0) - 1;
+      if (nextCount > 0) {
+        reactionsCount[symbol] = nextCount;
+      } else {
+        reactionsCount.remove(symbol);
+      }
+      reactionsMade.remove(symbol);
+    }
+
+    final updated = _copyWithLocalReactionState(
+      current,
+      reactionsCount: reactionsCount,
+      reactionsMade: reactionsMade,
+    );
+
+    await _repository.saveMessage(updated);
+
+    final updatedList = [..._currentMessages];
+    final index = updatedList.indexWhere((message) => message.id == messageId);
+    if (index >= 0) {
+      updatedList[index] = updated;
+      _emitMessages(updatedList);
     }
   }
 
@@ -1122,11 +1420,14 @@ class MessagesNotifier extends _$MessagesNotifier {
 
     // Clear flashing messages when starting a new jump
     if (!!ref.mounted) {
-      ref.read(flashingMessagesProvider.notifier).state = {};
+      ref.read(flashingMessagesProvider.notifier).clear();
     }
 
     try {
-      final jump = await _syncService.loadAroundMessage(messageId, chunkSize: 100);
+      final jump = await _syncService.loadAroundMessage(
+        messageId,
+        chunkSize: 100,
+      );
       if (!jump.found || jump.targetMessage == null) {
         Logger.root.info('Message $messageId not found');
         showSnackBar('messageNotFound'.tr());
@@ -1179,9 +1480,7 @@ class MessagesNotifier extends _$MessagesNotifier {
       // Wait a bit for the UI to rebuild with new messages
       await Future.delayed(const Duration(milliseconds: 100));
 
-      final finalIndex = _currentMessages.indexWhere(
-        (m) => m.id == messageId,
-      );
+      final finalIndex = _currentMessages.indexWhere((m) => m.id == messageId);
       Logger.root.info('Final index for message $messageId is $finalIndex');
 
       // Verify the message is actually in the list before returning

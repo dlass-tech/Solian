@@ -20,7 +20,7 @@ import 'domains/payments_api.dart';
 import 'domains/realms_api.dart';
 import 'domains/fitness_api.dart';
 
-/// Main client for interacting with the Dynamic Network API.
+/// Main client for interacting with the Solar Network API.
 ///
 /// Provides typed API methods organized by domain, with access to the
 /// underlying Dio instance for custom calls.

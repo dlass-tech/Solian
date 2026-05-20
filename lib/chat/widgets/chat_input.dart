@@ -16,6 +16,8 @@ import "package:island/e2ee/e2ee.dart";
 import "package:island/chat/messages_notifier.dart";
 import "package:island/chat/pods/chat_online_count.dart";
 import "package:island/posts/widgets/compose/compose_fund.dart";
+import "package:island/posts/widgets/compose/compose_location_sheet.dart";
+import "package:island/posts/widgets/compose/compose_meet_sheet.dart";
 import "package:island/posts/widgets/compose/compose_poll.dart";
 import "package:island/stickers/widgets/stickers/sticker_picker.dart";
 import "package:island/stickers/models/sticker.dart";
@@ -27,7 +29,7 @@ import "package:island/core/services/responsive.dart";
 import "package:island/core/widgets/content/attachment_preview.dart";
 import "package:island/drive/drive_service.dart";
 import "package:island/drive/widgets/cloud_files.dart";
-import "package:island/drive/widgets/upload_menu.dart";
+import "package:island/posts/widgets/compose/compose_link_attachments.dart";
 import "package:material_symbols_icons/material_symbols_icons.dart";
 import "package:pasteboard/pasteboard.dart";
 import "package:path_provider/path_provider.dart";
@@ -101,7 +103,7 @@ Map<String, dynamic> _convertKeysToSnakeCase(Map map) {
   return result;
 }
 
-const kInputDrawerExpandedHeight = 180.0;
+const kInputDrawerExpandedHeight = 280.0;
 
 const kExpandedSectionTabHeight = 32.0;
 
@@ -213,22 +215,99 @@ class _ChatTimeoutBanner extends StatelessWidget {
   }
 }
 
-class _ExpandedSection extends StatelessWidget {
+class _ExpandedSection extends StatefulWidget {
   final TextEditingController messageController;
+  final VoidCallback onSendMessage;
+  final int selectedTabIndex;
+  final ValueChanged<int> onTabChanged;
+  final VoidCallback onPickPhoto;
+  final VoidCallback onPickVideo;
+  final VoidCallback onPickAudio;
+  final VoidCallback onPickGeneralFile;
+  final List<UniversalFile> attachments;
+  final Function(int, {String? encryptKey}) onUploadAttachment;
+  final Function(int) onDeleteAttachment;
+  final Function(int, int) onMoveAttachment;
+  final Function(List<UniversalFile>) onAttachmentsChanged;
+  final Map<String, Map<int, double?>> attachmentProgress;
+  final String? roomEncryptKey;
   final SnPoll? selectedPoll;
   final Function(SnPoll?) onPollSelected;
   final SnWalletFund? selectedFund;
   final Function(SnWalletFund?) onFundSelected;
+  final String? selectedLocationName;
+  final String? selectedLocationAddress;
+  final String? selectedLocationWkt;
+  final String? selectedMeetId;
+  final Function({String? name, String? address, String? wkt})?
+  onLocationSelected;
+  final Function(String?)? onMeetSelected;
+  final bool isE2eeRoom;
   final VoidCallback onEnableVoiceMode;
 
   const _ExpandedSection({
     required this.messageController,
+    required this.onSendMessage,
+    required this.selectedTabIndex,
+    required this.onTabChanged,
+    required this.onPickPhoto,
+    required this.onPickVideo,
+    required this.onPickAudio,
+    required this.onPickGeneralFile,
+    required this.attachments,
+    required this.onUploadAttachment,
+    required this.onDeleteAttachment,
+    required this.onMoveAttachment,
+    required this.onAttachmentsChanged,
+    required this.attachmentProgress,
+    required this.roomEncryptKey,
     this.selectedPoll,
     required this.onPollSelected,
     this.selectedFund,
     required this.onFundSelected,
+    this.selectedLocationName,
+    this.selectedLocationAddress,
+    this.selectedLocationWkt,
+    this.selectedMeetId,
+    this.onLocationSelected,
+    this.onMeetSelected,
+    this.isE2eeRoom = false,
     required this.onEnableVoiceMode,
   });
+
+  @override
+  State<_ExpandedSection> createState() => _ExpandedSectionState();
+}
+
+class _ExpandedSectionState extends State<_ExpandedSection>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabController;
+  late int _lastReportedTabIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(
+      length: 3,
+      initialIndex: widget.selectedTabIndex.clamp(0, 2),
+      vsync: this,
+    );
+    _lastReportedTabIndex = _tabController.index;
+    _tabController.addListener(_onTabChanged);
+  }
+
+  void _onTabChanged() {
+    if (_tabController.index == _lastReportedTabIndex) return;
+    _lastReportedTabIndex = _tabController.index;
+    widget.onTabChanged(_tabController.index);
+  }
+
+  @override
+  void dispose() {
+    _tabController.removeListener(_onTabChanged);
+    _tabController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -241,122 +320,181 @@ class _ExpandedSection extends StatelessWidget {
       margin: const EdgeInsets.only(top: 8, bottom: 3),
       child: ClipRRect(
         borderRadius: const BorderRadius.all(Radius.circular(32)),
-        child: DefaultTabController(
-          length: 2,
-          child: Column(
-            children: [
-              PreferredSize(
-                preferredSize: const Size.fromHeight(kExpandedSectionTabHeight),
-                child: TabBar(
-                  splashBorderRadius: const BorderRadius.all(
-                    Radius.circular(40),
+        child: Column(
+          children: [
+            PreferredSize(
+              preferredSize: const Size.fromHeight(kExpandedSectionTabHeight),
+              child: TabBar(
+                controller: _tabController,
+                splashBorderRadius: const BorderRadius.all(Radius.circular(40)),
+                tabs: [
+                  Tab(text: 'features'.tr(), height: kExpandedSectionTabHeight),
+                  Tab(
+                    height: kExpandedSectionTabHeight,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('attachments'.tr()),
+                        if (widget.attachments.isNotEmpty) ...[
+                          const Gap(6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 1,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.primary,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              widget.attachments.length.toString(),
+                              style: Theme.of(context).textTheme.labelSmall
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onPrimary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
-                  tabs: [
-                    Tab(
-                      text: 'features'.tr(),
-                      height: kExpandedSectionTabHeight,
-                    ),
-                    Tab(
-                      text: 'stickers'.tr(),
-                      height: kExpandedSectionTabHeight,
-                    ),
-                  ],
-                ),
+                  Tab(text: 'stickers'.tr(), height: kExpandedSectionTabHeight),
+                ],
               ),
-              SizedBox(
-                height: kInputDrawerExpandedHeight,
-                child: TabBarView(
-                  children: [
-                    SizedBox(
-                      height:
-                          kInputDrawerExpandedHeight -
-                          48, // subtract tab bar height approx
-                      child: GridView(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 12,
+            ),
+            SizedBox(
+              height: kInputDrawerExpandedHeight,
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  SizedBox(
+                    height: kInputDrawerExpandedHeight,
+                    child: GridView(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 12,
+                      ),
+                      gridDelegate:
+                          const SliverGridDelegateWithMaxCrossAxisExtent(
+                            maxCrossAxisExtent: 120,
+                            childAspectRatio: 1, // 1:1 aspect ratio
+                            mainAxisSpacing: 8,
+                            crossAxisSpacing: 8,
+                          ),
+                      children: [
+                        InkWell(
+                          borderRadius: const BorderRadius.all(
+                            Radius.circular(8),
+                          ),
+                          onTap: () async {
+                            final poll = await showModalBottomSheet<SnPoll>(
+                              context: context,
+                              isScrollControlled: true,
+                              builder: (context) => const ComposePollSheet(),
+                            );
+                            if (poll != null) {
+                              widget.onPollSelected(poll);
+                            }
+                          },
+                          child: Card(
+                            margin: EdgeInsets.zero,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.surfaceContainer,
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Symbols.poll),
+                                const Gap(4),
+                                Text(
+                                  'Poll',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
-                        gridDelegate:
-                            const SliverGridDelegateWithMaxCrossAxisExtent(
-                              maxCrossAxisExtent: 120,
-                              childAspectRatio: 1, // 1:1 aspect ratio
-                              mainAxisSpacing: 8,
-                              crossAxisSpacing: 8,
+                        InkWell(
+                          borderRadius: const BorderRadius.all(
+                            Radius.circular(8),
+                          ),
+                          onTap: widget.onEnableVoiceMode,
+                          child: Card(
+                            margin: EdgeInsets.zero,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.surfaceContainer,
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Symbols.mic),
+                                const Gap(4),
+                                Text(
+                                  'Voice',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ],
                             ),
-                        children: [
+                          ),
+                        ),
+                        InkWell(
+                          borderRadius: const BorderRadius.all(
+                            Radius.circular(8),
+                          ),
+                          onTap: () async {
+                            final fund =
+                                await showModalBottomSheet<SnWalletFund>(
+                                  context: context,
+                                  isScrollControlled: true,
+                                  builder: (context) =>
+                                      const ComposeFundSheet(),
+                                );
+                            if (fund != null) {
+                              widget.onFundSelected(fund);
+                            }
+                          },
+                          child: Card(
+                            margin: EdgeInsets.zero,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.surfaceContainer,
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Symbols.currency_exchange),
+                                const Gap(4),
+                                Text(
+                                  'fund'.tr(),
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        if (!widget.isE2eeRoom)
                           InkWell(
                             borderRadius: const BorderRadius.all(
                               Radius.circular(8),
                             ),
                             onTap: () async {
-                              final poll = await showModalBottomSheet<SnPoll>(
-                                context: context,
-                                isScrollControlled: true,
-                                builder: (context) => const ComposePollSheet(),
-                              );
-                              if (poll != null) {
-                                onPollSelected(poll);
-                              }
-                            },
-                            child: Card(
-                              margin: EdgeInsets.zero,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.surfaceContainer,
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Symbols.poll),
-                                  const Gap(4),
-                                  Text(
-                                    'Poll',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          InkWell(
-                            borderRadius: const BorderRadius.all(
-                              Radius.circular(8),
-                            ),
-                            onTap: onEnableVoiceMode,
-                            child: Card(
-                              margin: EdgeInsets.zero,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.surfaceContainer,
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Symbols.mic),
-                                  const Gap(4),
-                                  Text(
-                                    'Voice',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          InkWell(
-                            borderRadius: const BorderRadius.all(
-                              Radius.circular(8),
-                            ),
-                            onTap: () async {
-                              final fund =
-                                  await showModalBottomSheet<SnWalletFund>(
+                              final location =
+                                  await showModalBottomSheet<
+                                    Map<String, String?>
+                                  >(
                                     context: context,
                                     isScrollControlled: true,
                                     builder: (context) =>
-                                        const ComposeFundSheet(),
+                                        const ComposeLocationSheet(),
                                   );
-                              if (fund != null) {
-                                onFundSelected(fund);
+                              if (location != null) {
+                                widget.onLocationSelected?.call(
+                                  name: location['name'],
+                                  address: location['address'],
+                                  wkt: location['wkt'],
+                                );
                               }
                             },
                             child: Card(
@@ -367,33 +505,323 @@ class _ExpandedSection extends StatelessWidget {
                               child: Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  Icon(Symbols.currency_exchange),
+                                  Icon(Symbols.location_on),
                                   const Gap(4),
                                   Text(
-                                    'fund'.tr(),
+                                    'location'.tr(),
                                     style: Theme.of(
                                       context,
                                     ).textTheme.bodySmall,
                                   ),
                                 ],
                               ),
+                            ),
+                          ),
+                        if (!widget.isE2eeRoom)
+                          InkWell(
+                            borderRadius: const BorderRadius.all(
+                              Radius.circular(8),
+                            ),
+                            onTap: () async {
+                              final meetId = await showModalBottomSheet<String>(
+                                context: context,
+                                isScrollControlled: true,
+                                builder: (context) => const ComposeMeetSheet(),
+                              );
+                              if (meetId != null) {
+                                widget.onMeetSelected?.call(meetId);
+                              }
+                            },
+                            child: Card(
+                              margin: EdgeInsets.zero,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.surfaceContainer,
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Symbols.groups),
+                                  const Gap(4),
+                                  Text(
+                                    'meet'.tr(),
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  _AttachmentsExpandedTab(
+                    onPickPhoto: widget.onPickPhoto,
+                    onPickVideo: widget.onPickVideo,
+                    onPickAudio: widget.onPickAudio,
+                    onPickGeneralFile: widget.onPickGeneralFile,
+                    attachments: widget.attachments,
+                    onUploadAttachment: widget.onUploadAttachment,
+                    onDeleteAttachment: widget.onDeleteAttachment,
+                    onMoveAttachment: widget.onMoveAttachment,
+                    onAttachmentsChanged: widget.onAttachmentsChanged,
+                    attachmentProgress: widget.attachmentProgress,
+                    roomEncryptKey: widget.roomEncryptKey,
+                  ),
+                  StickerPickerEmbedded(
+                    height: kInputDrawerExpandedHeight,
+                    onPick: (pack, sticker) {
+                      final placeholder = ':${pack.prefix}+${sticker.slug}:';
+                      if (sticker.mode == 0) {
+                        widget.messageController.value = TextEditingValue(
+                          text: placeholder,
+                          selection: TextSelection.collapsed(
+                            offset: placeholder.length,
+                          ),
+                        );
+                        widget.onSendMessage();
+                        return;
+                      }
+
+                      _insertPlaceholder(widget.messageController, placeholder);
+                    },
+                    onLongPress: (pack, sticker) {
+                      final placeholder = ':${pack.prefix}+${sticker.slug}:';
+                      _insertPlaceholder(widget.messageController, placeholder);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AttachmentAction {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _AttachmentAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+}
+
+class _AttachmentsExpandedTab extends StatelessWidget {
+  final VoidCallback onPickPhoto;
+  final VoidCallback onPickVideo;
+  final VoidCallback onPickAudio;
+  final VoidCallback onPickGeneralFile;
+  final List<UniversalFile> attachments;
+  final Function(int, {String? encryptKey}) onUploadAttachment;
+  final Function(int) onDeleteAttachment;
+  final Function(int, int) onMoveAttachment;
+  final Function(List<UniversalFile>) onAttachmentsChanged;
+  final Map<String, Map<int, double?>> attachmentProgress;
+  final String? roomEncryptKey;
+
+  const _AttachmentsExpandedTab({
+    required this.onPickPhoto,
+    required this.onPickVideo,
+    required this.onPickAudio,
+    required this.onPickGeneralFile,
+    required this.attachments,
+    required this.onUploadAttachment,
+    required this.onDeleteAttachment,
+    required this.onMoveAttachment,
+    required this.onAttachmentsChanged,
+    required this.attachmentProgress,
+    required this.roomEncryptKey,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final actions = [
+      _AttachmentAction(
+        icon: Symbols.add_a_photo,
+        label: 'addPhoto'.tr(),
+        onTap: onPickPhoto,
+      ),
+      _AttachmentAction(
+        icon: Symbols.videocam,
+        label: 'addVideo'.tr(),
+        onTap: onPickVideo,
+      ),
+      _AttachmentAction(
+        icon: Symbols.mic,
+        label: 'addAudio'.tr(),
+        onTap: onPickAudio,
+      ),
+      _AttachmentAction(
+        icon: Symbols.file_upload,
+        label: 'uploadFile'.tr(),
+        onTap: onPickGeneralFile,
+      ),
+    ];
+
+    return Column(
+      children: [
+        SizedBox(
+          height: 64,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              const minCardWidth = 112.0;
+              const gap = 8.0;
+              const horizontalPadding = 24.0;
+              final availableWidth = constraints.maxWidth - horizontalPadding;
+              final sharedWidth =
+                  (availableWidth - gap * (actions.length - 1)) /
+                  actions.length;
+              final shouldShareWidth = sharedWidth >= minCardWidth;
+
+              Widget buildAction(_AttachmentAction action) => SizedBox(
+                width: shouldShareWidth ? sharedWidth : minCardWidth,
+                child: InkWell(
+                  borderRadius: const BorderRadius.all(Radius.circular(8)),
+                  onTap: action.onTap,
+                  child: Card(
+                    margin: EdgeInsets.zero,
+                    color: Theme.of(context).colorScheme.surfaceContainer,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(action.icon, size: 20),
+                          const Gap(6),
+                          Flexible(
+                            child: Text(
+                              action.label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.bodySmall,
                             ),
                           ),
                         ],
                       ),
                     ),
-                    StickerPickerEmbedded(
-                      height: kInputDrawerExpandedHeight,
-                      onPick: (placeholder) =>
-                          _insertPlaceholder(messageController, placeholder),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-            ],
+              );
+
+              if (shouldShareWidth) {
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+                  child: Row(
+                    children: [
+                      for (var i = 0; i < actions.length; i++) ...[
+                        buildAction(actions[i]),
+                        if (i != actions.length - 1) const Gap(gap),
+                      ],
+                    ],
+                  ),
+                );
+              }
+
+              return ListView.separated(
+                padding: const EdgeInsets.fromLTRB(12, 2, 12, 0),
+                scrollDirection: Axis.horizontal,
+                itemCount: actions.length,
+                separatorBuilder: (_, _) => const Gap(gap),
+                itemBuilder: (context, index) => buildAction(actions[index]),
+              );
+            },
           ),
         ),
-      ),
+        Expanded(
+          child: CloudFileLinkPicker(
+            padding: const EdgeInsets.all(8),
+            recentUploadsSliverHeaders: [
+              if (attachments.isNotEmpty)
+                SliverToBoxAdapter(
+                  child: SizedBox(
+                    height: 150,
+                    child: _AttachmentPreviewStrip(
+                      attachments: attachments,
+                      onUploadAttachment: onUploadAttachment,
+                      onDeleteAttachment: onDeleteAttachment,
+                      onMoveAttachment: onMoveAttachment,
+                      onAttachmentsChanged: onAttachmentsChanged,
+                      attachmentProgress: attachmentProgress,
+                      roomEncryptKey: roomEncryptKey,
+                    ),
+                  ).padding(vertical: 10),
+                ),
+              if (attachments.isNotEmpty)
+                const SliverToBoxAdapter(child: Divider(height: 1)),
+            ],
+            onSelected: (file) {
+              final linkAttachment = UniversalFile.fromAttachment(
+                file,
+              ).copyWith(isLink: true);
+              final alreadyLinked = attachments.any(
+                (item) => item.isOnCloud && item.data.id == file.id,
+              );
+              if (alreadyLinked) return;
+              onAttachmentsChanged([...attachments, linkAttachment]);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AttachmentPreviewStrip extends StatelessWidget {
+  final List<UniversalFile> attachments;
+  final Function(int, {String? encryptKey}) onUploadAttachment;
+  final Function(int) onDeleteAttachment;
+  final Function(int, int) onMoveAttachment;
+  final Function(List<UniversalFile>) onAttachmentsChanged;
+  final Map<String, Map<int, double?>> attachmentProgress;
+  final String? roomEncryptKey;
+
+  const _AttachmentPreviewStrip({
+    required this.attachments,
+    required this.onUploadAttachment,
+    required this.onDeleteAttachment,
+    required this.onMoveAttachment,
+    required this.onAttachmentsChanged,
+    required this.attachmentProgress,
+    required this.roomEncryptKey,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.separated(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      scrollDirection: Axis.horizontal,
+      itemCount: attachments.length,
+      itemBuilder: (context, idx) {
+        return SizedBox(
+          width: 180,
+          child: AttachmentPreview(
+            isCompact: true,
+            item: attachments[idx],
+            progress: attachmentProgress['chat-upload']?[idx],
+            isUploading:
+                attachmentProgress['chat-upload']?.containsKey(idx) ?? false,
+            onRequestUpload: () =>
+                onUploadAttachment(idx, encryptKey: roomEncryptKey),
+            onDelete: () => onDeleteAttachment(idx),
+            onUpdate: (value) {
+              final clone = List<UniversalFile>.of(attachments);
+              clone[idx] = value;
+              onAttachmentsChanged(clone);
+            },
+            onMove: (delta) => onMoveAttachment(idx, delta),
+          ),
+        );
+      },
+      separatorBuilder: (_, _) => const Gap(8),
     );
   }
 }
@@ -420,6 +848,13 @@ class ChatInput extends HookConsumerWidget {
   final Function(SnPoll?) onPollSelected;
   final SnWalletFund? selectedFund;
   final Function(SnWalletFund?) onFundSelected;
+  final String? selectedLocationName;
+  final String? selectedLocationAddress;
+  final String? selectedLocationWkt;
+  final String? selectedMeetId;
+  final Function({String? name, String? address, String? wkt})?
+  onLocationSelected;
+  final Function(String?)? onMeetSelected;
   final bool isMessageListScrolling;
 
   const ChatInput({
@@ -445,6 +880,12 @@ class ChatInput extends HookConsumerWidget {
     required this.onPollSelected,
     this.selectedFund,
     required this.onFundSelected,
+    this.selectedLocationName,
+    this.selectedLocationAddress,
+    this.selectedLocationWkt,
+    this.selectedMeetId,
+    this.onLocationSelected,
+    this.onMeetSelected,
     required this.isMessageListScrolling,
   });
 
@@ -454,6 +895,7 @@ class ChatInput extends HookConsumerWidget {
     final roomIdentity = ref.watch(chatRoomIdentityProvider(chatRoom.id));
     final chatSubscribe = ref.watch(chatSubscribeProvider(chatRoom.id));
     final isExpanded = useState(false);
+    final expandedTabIndex = useState(0);
     final isDraggingOver = useState(false);
     final isVoiceMode = useState(false);
     final isRecordingVoice = useState(false);
@@ -892,43 +1334,20 @@ class ChatInput extends HookConsumerWidget {
                               ),
                             );
                           },
-                      child: attachments.isNotEmpty
+                      child: attachments.isNotEmpty && !isExpanded.value
                           ? SizedBox(
                               key: ValueKey(
                                 'attachments-${attachments.length}',
                               ),
                               height: 180,
-                              child: ListView.separated(
-                                padding: EdgeInsets.symmetric(horizontal: 12),
-                                scrollDirection: Axis.horizontal,
-                                itemCount: attachments.length,
-                                itemBuilder: (context, idx) {
-                                  return SizedBox(
-                                    width: 180,
-                                    child: AttachmentPreview(
-                                      isCompact: true,
-                                      item: attachments[idx],
-                                      progress:
-                                          attachmentProgress['chat-upload']?[idx],
-                                      isUploading:
-                                          attachmentProgress['chat-upload']
-                                              ?.containsKey(idx) ??
-                                          false,
-                                      onRequestUpload: () => onUploadAttachment(
-                                        idx,
-                                        encryptKey: roomEncryptKey,
-                                      ),
-                                      onDelete: () => onDeleteAttachment(idx),
-                                      onUpdate: (value) {
-                                        attachments[idx] = value;
-                                        onAttachmentsChanged(attachments);
-                                      },
-                                      onMove: (delta) =>
-                                          onMoveAttachment(idx, delta),
-                                    ),
-                                  );
-                                },
-                                separatorBuilder: (_, _) => const Gap(8),
+                              child: _AttachmentPreviewStrip(
+                                attachments: attachments,
+                                onUploadAttachment: onUploadAttachment,
+                                onDeleteAttachment: onDeleteAttachment,
+                                onMoveAttachment: onMoveAttachment,
+                                onAttachmentsChanged: onAttachmentsChanged,
+                                attachmentProgress: attachmentProgress,
+                                roomEncryptKey: roomEncryptKey,
                               ),
                             ).padding(vertical: 12)
                           : const SizedBox.shrink(
@@ -1156,6 +1575,206 @@ class ChatInput extends HookConsumerWidget {
                             );
                           },
                       child:
+                          selectedLocationName != null ||
+                              selectedLocationAddress != null ||
+                              selectedLocationWkt != null
+                          ? Container(
+                              key: const ValueKey('selected-location'),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.surfaceContainerHigh,
+                                borderRadius: BorderRadius.circular(24),
+                                border: Border.all(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.outline.withOpacity(0.2),
+                                  width: 1,
+                                ),
+                              ),
+                              margin: const EdgeInsets.only(
+                                left: 8,
+                                right: 8,
+                                top: 8,
+                                bottom: 8,
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Symbols.location_on,
+                                    size: 18,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                  ),
+                                  const Gap(8),
+                                  Expanded(
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        if (selectedLocationName != null)
+                                          Text(
+                                            selectedLocationName!,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodySmall!
+                                                .copyWith(
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        if (selectedLocationAddress != null)
+                                          Text(
+                                            selectedLocationAddress!,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodySmall!
+                                                .copyWith(
+                                                  fontSize: 10,
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .onSurfaceVariant,
+                                                ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: IconButton(
+                                      padding: EdgeInsets.zero,
+                                      icon: const Icon(Icons.close, size: 18),
+                                      onPressed: () =>
+                                          onLocationSelected?.call(),
+                                      tooltip: 'clear'.tr(),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : const SizedBox.shrink(
+                              key: ValueKey('no-selected-location'),
+                            ),
+                    ),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 200),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      transitionBuilder:
+                          (Widget child, Animation<double> animation) {
+                            return SlideTransition(
+                              position: Tween<Offset>(
+                                begin: const Offset(0, -0.2),
+                                end: Offset.zero,
+                              ).animate(animation),
+                              child: FadeTransition(
+                                opacity: animation,
+                                child: SizeTransition(
+                                  sizeFactor: animation,
+                                  axisAlignment: -1.0,
+                                  child: child,
+                                ),
+                              ),
+                            );
+                          },
+                      child: selectedMeetId != null
+                          ? Container(
+                              key: const ValueKey('selected-meet'),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.surfaceContainerHigh,
+                                borderRadius: BorderRadius.circular(24),
+                                border: Border.all(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.outline.withOpacity(0.2),
+                                  width: 1,
+                                ),
+                              ),
+                              margin: const EdgeInsets.only(
+                                left: 8,
+                                right: 8,
+                                top: 8,
+                                bottom: 8,
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Symbols.groups,
+                                    size: 18,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                  ),
+                                  const Gap(8),
+                                  Expanded(
+                                    child: Text(
+                                      'meetLinked'.tr(),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall!
+                                          .copyWith(
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: IconButton(
+                                      padding: EdgeInsets.zero,
+                                      icon: const Icon(Icons.close, size: 18),
+                                      onPressed: () =>
+                                          onMeetSelected?.call(null),
+                                      tooltip: 'clear'.tr(),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : const SizedBox.shrink(
+                              key: ValueKey('no-selected-meet'),
+                            ),
+                    ),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 200),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      transitionBuilder:
+                          (Widget child, Animation<double> animation) {
+                            return SlideTransition(
+                              position: Tween<Offset>(
+                                begin: const Offset(0, -0.2),
+                                end: Offset.zero,
+                              ).animate(animation),
+                              child: FadeTransition(
+                                opacity: animation,
+                                child: SizeTransition(
+                                  sizeFactor: animation,
+                                  axisAlignment: -1.0,
+                                  child: child,
+                                ),
+                              ),
+                            );
+                          },
+                      child:
                           (messageReplyingTo != null ||
                               messageForwardingTo != null ||
                               messageEditingTo != null)
@@ -1342,46 +1961,6 @@ class ChatInput extends HookConsumerWidget {
                                     }
                                   : null,
                             ),
-                            if (!isVoiceMode.value)
-                              IgnorePointer(
-                                ignoring: !canCompose,
-                                child: Opacity(
-                                  opacity: canCompose ? 1 : 0.45,
-                                  child: UploadMenu(
-                                    items: [
-                                      UploadMenuItemData(
-                                        Symbols.add_a_photo,
-                                        'addPhoto',
-                                        () => onPickFile(true),
-                                      ),
-                                      UploadMenuItemData(
-                                        Symbols.videocam,
-                                        'addVideo',
-                                        () => onPickFile(false),
-                                      ),
-                                      UploadMenuItemData(
-                                        Symbols.mic,
-                                        'addAudio',
-                                        onPickAudio,
-                                      ),
-                                      UploadMenuItemData(
-                                        Symbols.file_upload,
-                                        'uploadFile',
-                                        onPickGeneralFile,
-                                      ),
-                                      if (onLinkAttachment != null)
-                                        UploadMenuItemData(
-                                          Symbols.attach_file,
-                                          'linkAttachment',
-                                          onLinkAttachment!,
-                                        ),
-                                    ],
-                                    iconColor: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurface,
-                                  ),
-                                ),
-                              ),
                           ],
                         ),
                         Expanded(
@@ -1636,7 +2215,11 @@ class ChatInput extends HookConsumerWidget {
                                         final sticker = SnSticker.fromJson(
                                           normalizedData,
                                         );
-                                        title = sticker.slug;
+                                        title =
+                                            sticker.name?.trim().isNotEmpty ==
+                                                true
+                                            ? sticker.name!
+                                            : sticker.slug;
                                         leading = ClipRRect(
                                           borderRadius: BorderRadius.circular(
                                             8,
@@ -1720,11 +2303,34 @@ class ChatInput extends HookConsumerWidget {
                           },
                       child: isExpanded.value
                           ? _ExpandedSection(
+                              onSendMessage: send,
                               messageController: messageController,
+                              selectedTabIndex: expandedTabIndex.value,
+                              onTabChanged: (index) {
+                                expandedTabIndex.value = index;
+                              },
+                              onPickPhoto: () => onPickFile(true),
+                              onPickVideo: () => onPickFile(false),
+                              onPickAudio: onPickAudio,
+                              onPickGeneralFile: onPickGeneralFile,
+                              attachments: attachments,
+                              onUploadAttachment: onUploadAttachment,
+                              onDeleteAttachment: onDeleteAttachment,
+                              onMoveAttachment: onMoveAttachment,
+                              onAttachmentsChanged: onAttachmentsChanged,
+                              attachmentProgress: attachmentProgress,
+                              roomEncryptKey: roomEncryptKey,
                               selectedPoll: selectedPoll,
                               onPollSelected: onPollSelected,
                               selectedFund: selectedFund,
                               onFundSelected: onFundSelected,
+                              selectedLocationName: selectedLocationName,
+                              selectedLocationAddress: selectedLocationAddress,
+                              selectedLocationWkt: selectedLocationWkt,
+                              selectedMeetId: selectedMeetId,
+                              onLocationSelected: onLocationSelected,
+                              onMeetSelected: onMeetSelected,
+                              isE2eeRoom: roomEncryptKey != null,
                               onEnableVoiceMode: () {
                                 isVoiceMode.value = true;
                                 isExpanded.value = false;

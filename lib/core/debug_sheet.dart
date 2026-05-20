@@ -5,10 +5,12 @@ import 'package:flutter/services.dart';
 import 'package:gap/gap.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:island/accounts/progression_ws.dart';
+import 'package:island/accounts/widgets/friend_status_toast.dart';
 import 'package:island/core/database.dart';
 import 'package:island/core/notification.dart';
 import 'package:island/core/network.dart';
 import 'package:island/core/services/update_service.dart';
+import 'package:island/drive/drive_service.dart';
 import 'package:island/e2ee/mls_engine.dart';
 import 'package:island/e2ee/mls_storage.dart';
 import 'package:island/e2ee/mls_client.dart';
@@ -17,6 +19,7 @@ import 'package:island/shared/widgets/alert.dart';
 import 'package:island/core/widgets/content/network_status_sheet.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:island/core/config.dart';
+import 'package:logging/logging.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:island/shared/widgets/app_onboarding_sheet.dart';
 import 'package:island/core/widgets/draggable_log_overlay.dart';
@@ -25,6 +28,40 @@ import 'package:island/route.dart';
 import 'package:island/shared/widgets/layouts/sheet_scaffold.dart';
 
 import 'package:solar_network_sdk/solar_network_sdk.dart';
+
+SnAccount _createTestAccount({
+  required String id,
+  required String name,
+  String? nick,
+}) {
+  return SnAccount(
+    id: id,
+    name: name,
+    nick: nick ?? name,
+    language: 'en',
+    isSuperuser: false,
+    automatedId: null,
+    profile: SnAccountProfile(
+      id: 'profile-$id',
+      experience: 0,
+      level: 1,
+      levelingProgress: 0.0,
+      picture: null,
+      background: null,
+      verification: null,
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+      deletedAt: null,
+    ),
+    perkSubscription: null,
+    badges: [],
+    contacts: [],
+    activatedAt: DateTime.now(),
+    createdAt: DateTime.now(),
+    updatedAt: DateTime.now(),
+    deletedAt: null,
+  );
+}
 
 OverlayEntry? _debugOverlayEntry;
 
@@ -112,7 +149,11 @@ void hideDebugOverlay() {
   _debugOverlayEntry = null;
 }
 
-void toggleDebugOverlay() {
+void toggleDebugOverlay(WidgetRef ref) {
+  if (!ref.read(developerModeProvider)) {
+    Logger.root.info('[DeveloperMode] Blocked debug overlay toggle');
+    return;
+  }
   if (_debugOverlayEntry != null) {
     hideDebugOverlay();
   } else {
@@ -191,7 +232,6 @@ class _DraggableDebugPanelState extends ConsumerState<_DraggableDebugPanel>
   late bool _isCollapsed;
   late AnimationController _animController;
   late Animation<double> _expandAnim;
-  late Animation<double> _fadeAnim;
 
   @override
   void initState() {
@@ -208,10 +248,6 @@ class _DraggableDebugPanelState extends ConsumerState<_DraggableDebugPanel>
       parent: _animController,
       curve: Curves.easeOutCubic,
       reverseCurve: Curves.easeInCubic,
-    );
-    _fadeAnim = CurvedAnimation(
-      parent: _animController,
-      curve: Curves.easeInOut,
     );
   }
 
@@ -245,34 +281,34 @@ class _DraggableDebugPanelState extends ConsumerState<_DraggableDebugPanel>
     return Positioned(
       left: _position.dx,
       top: _position.dy,
-      child: FadeTransition(
-        opacity: _fadeAnim.value == 0 ? AlwaysStoppedAnimation(1.0) : _fadeAnim,
-        child: Material(
-          color: Colors.transparent,
-          child: GestureDetector(
-            onPanUpdate: (details) {
-              final screenSize = MediaQuery.of(context).size;
-              final overlayWidth = _isCollapsed ? collapsedWidth : _size.width;
-              final overlayHeight = _isCollapsed
-                  ? collapsedHeight
-                  : _size.height;
+      child: Material(
+        color: Colors.transparent,
+        child: GestureDetector(
+          onPanUpdate: (details) {
+            final screenSize = MediaQuery.of(context).size;
+            final overlayWidth = _isCollapsed ? collapsedWidth : _size.width;
+            final overlayHeight = _isCollapsed ? collapsedHeight : _size.height;
 
-              setState(() {
-                _position = Offset(
-                  (_position.dx + details.delta.dx).clamp(
-                    0,
-                    screenSize.width - overlayWidth,
-                  ),
-                  (_position.dy + details.delta.dy).clamp(
-                    0,
-                    screenSize.height - overlayHeight,
-                  ),
-                );
-              });
-              ref
-                  .read(_debugOverlayStateProvider.notifier)
-                  .updatePosition(details.delta);
-            },
+            setState(() {
+              _position = Offset(
+                (_position.dx + details.delta.dx).clamp(
+                  0,
+                  screenSize.width - overlayWidth,
+                ),
+                (_position.dy + details.delta.dy).clamp(
+                  0,
+                  screenSize.height - overlayHeight,
+                ),
+              );
+            });
+            ref
+                .read(_debugOverlayStateProvider.notifier)
+                .updatePosition(details.delta);
+          },
+          child: AnimatedSize(
+            duration: const Duration(milliseconds: 280),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topLeft,
             child: SizedBox(
               width: currentWidth,
               height: currentHeight,
@@ -588,6 +624,15 @@ class _DraggableDebugPanelState extends ConsumerState<_DraggableDebugPanel>
           },
         ),
         _DebugItem(
+          icon: Symbols.storage,
+          title: 'Test drive quota sheet',
+          onTap: () async {
+            await ref
+                .read(driveFileUploaderProvider)
+                .showQuotaExceededSheetPreview();
+          },
+        ),
+        _DebugItem(
           icon: Symbols.chat_bubble,
           title: 'Test snackbar',
           onTap: () {
@@ -613,6 +658,158 @@ class _DraggableDebugPanelState extends ConsumerState<_DraggableDebugPanel>
               accountId: 'local',
             );
             ref.read(notificationStateProvider.notifier).add(notification);
+          },
+        ),
+        _Divider(),
+        _DebugItem(
+          icon: Symbols.person_add,
+          title: 'Test friend online toast',
+          onTap: () {
+            final event = FriendStatusChangeEvent(
+              account: _createTestAccount(
+                id: 'test-friend-1',
+                name: 'alice',
+                nick: 'Alice',
+              ),
+              status: SnAccountStatus(
+                id: 'status-1',
+                attitude: 2,
+                isOnline: true,
+                isCustomized: false,
+                type: 0,
+                label: '',
+                symbol: null,
+                meta: null,
+                clearedAt: null,
+                appIdentifier: null,
+                isAutomated: false,
+                accountId: 'test-friend-1',
+                createdAt: DateTime.now(),
+                updatedAt: DateTime.now(),
+                deletedAt: null,
+              ),
+              changeType: FriendStatusChangeType.online,
+            );
+            ref.read(friendStatusToastProvider.notifier).showEvent(event);
+          },
+        ),
+        _DebugItem(
+          icon: Symbols.person_remove,
+          title: 'Test friend offline toast',
+          onTap: () {
+            final event = FriendStatusChangeEvent(
+              account: _createTestAccount(
+                id: 'test-friend-2',
+                name: 'bob',
+                nick: 'Bob',
+              ),
+              changeType: FriendStatusChangeType.offline,
+            );
+            ref.read(friendStatusToastProvider.notifier).showEvent(event);
+          },
+        ),
+        _DebugItem(
+          icon: Symbols.sports_esports,
+          title: 'Test friend gaming toast',
+          onTap: () {
+            final event = FriendStatusChangeEvent(
+              account: _createTestAccount(
+                id: 'test-friend-3',
+                name: 'carol',
+                nick: 'Carol',
+              ),
+              activities: [
+                SnPresenceActivity(
+                  id: 'activity-1',
+                  type: 1,
+                  manualId: 'steam',
+                  title: 'Dyson Sphere Program',
+                  subtitle: 'Playing Dyson Sphere Program',
+                  caption: null,
+                  titleUrl: null,
+                  subtitleUrl: null,
+                  smallImage: null,
+                  largeImage: null,
+                  meta: null,
+                  leaseMinutes: 5,
+                  leaseExpiresAt: DateTime.now().add(Duration(hours: 1)),
+                  accountId: 'test-friend-3',
+                  createdAt: DateTime.now(),
+                  updatedAt: DateTime.now(),
+                  deletedAt: null,
+                ),
+              ],
+              changeType: FriendStatusChangeType.activityStarted,
+            );
+            ref.read(friendStatusToastProvider.notifier).showEvent(event);
+          },
+        ),
+        _DebugItem(
+          icon: Symbols.music_note,
+          title: 'Test friend music toast',
+          onTap: () {
+            final event = FriendStatusChangeEvent(
+              account: _createTestAccount(
+                id: 'test-friend-4',
+                name: 'david',
+                nick: 'David',
+              ),
+              activities: [
+                SnPresenceActivity(
+                  id: 'activity-2',
+                  type: 2,
+                  manualId: 'spotify',
+                  title: 'Blinding Lights',
+                  subtitle: 'The Weeknd - Blinding Lights',
+                  caption: null,
+                  titleUrl: null,
+                  subtitleUrl: null,
+                  smallImage: null,
+                  largeImage: null,
+                  meta: {'progress_ms': 120000, 'track_duration_ms': 200000},
+                  leaseMinutes: 5,
+                  leaseExpiresAt: DateTime.now().add(Duration(hours: 1)),
+                  accountId: 'test-friend-4',
+                  createdAt: DateTime.now(),
+                  updatedAt: DateTime.now(),
+                  deletedAt: null,
+                ),
+              ],
+              changeType: FriendStatusChangeType.activityStarted,
+            );
+            ref.read(friendStatusToastProvider.notifier).showEvent(event);
+          },
+        ),
+        _DebugItem(
+          icon: Symbols.do_not_disturb_on,
+          title: 'Test friend busy toast',
+          onTap: () {
+            final event = FriendStatusChangeEvent(
+              account: _createTestAccount(
+                id: 'test-friend-5',
+                name: 'eve',
+                nick: 'Eve',
+              ),
+              status: SnAccountStatus(
+                id: 'status-2',
+                attitude: 2,
+                isOnline: true,
+                isCustomized: true,
+                type: 1,
+                label: 'In a meeting',
+                symbol: 'calendar',
+                meta: null,
+                clearedAt: null,
+                appIdentifier: null,
+                isAutomated: false,
+                accountId: 'test-friend-5',
+                createdAt: DateTime.now(),
+                updatedAt: DateTime.now(),
+                deletedAt: null,
+              ),
+              changeType: FriendStatusChangeType.busy,
+            );
+            ref.read(friendStatusToastProvider.notifier).showEvent(event);
           },
         ),
         _DebugItem(
@@ -1032,6 +1229,18 @@ class DebugSheet extends HookConsumerWidget {
             ),
             ListTile(
               minTileHeight: 48,
+              leading: const Icon(Symbols.storage),
+              trailing: const Icon(Symbols.chevron_right),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+              title: const Text('Test drive quota sheet'),
+              onTap: () async {
+                await ref
+                    .read(driveFileUploaderProvider)
+                    .showQuotaExceededSheetPreview();
+              },
+            ),
+            ListTile(
+              minTileHeight: 48,
               leading: const Icon(Symbols.chat_bubble),
               trailing: const Icon(Symbols.chevron_right),
               contentPadding: const EdgeInsets.symmetric(horizontal: 24),
@@ -1064,6 +1273,176 @@ class DebugSheet extends HookConsumerWidget {
                 );
                 ref.read(notificationStateProvider.notifier).add(notification);
                 Navigator.pop(context);
+              },
+            ),
+            const Divider(height: 8),
+            ListTile(
+              minTileHeight: 48,
+              leading: const Icon(Symbols.person_add),
+              trailing: const Icon(Symbols.chevron_right),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+              title: const Text('Test friend online toast'),
+              onTap: () {
+                final event = FriendStatusChangeEvent(
+                  account: _createTestAccount(
+                    id: 'test-friend-1',
+                    name: 'alice',
+                    nick: 'Alice',
+                  ),
+                  status: SnAccountStatus(
+                    id: 'status-1',
+                    attitude: 2,
+                    isOnline: true,
+                    isCustomized: false,
+                    type: 0,
+                    label: '',
+                    symbol: null,
+                    meta: null,
+                    clearedAt: null,
+                    appIdentifier: null,
+                    isAutomated: false,
+                    accountId: 'test-friend-1',
+                    createdAt: DateTime.now(),
+                    updatedAt: DateTime.now(),
+                    deletedAt: null,
+                  ),
+                  changeType: FriendStatusChangeType.online,
+                );
+                ref.read(friendStatusToastProvider.notifier).showEvent(event);
+              },
+            ),
+            ListTile(
+              minTileHeight: 48,
+              leading: const Icon(Symbols.person_remove),
+              trailing: const Icon(Symbols.chevron_right),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+              title: const Text('Test friend offline toast'),
+              onTap: () {
+                final event = FriendStatusChangeEvent(
+                  account: _createTestAccount(
+                    id: 'test-friend-2',
+                    name: 'bob',
+                    nick: 'Bob',
+                  ),
+                  changeType: FriendStatusChangeType.offline,
+                );
+                ref.read(friendStatusToastProvider.notifier).showEvent(event);
+              },
+            ),
+            ListTile(
+              minTileHeight: 48,
+              leading: const Icon(Symbols.sports_esports),
+              trailing: const Icon(Symbols.chevron_right),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+              title: const Text('Test friend gaming toast'),
+              onTap: () {
+                final event = FriendStatusChangeEvent(
+                  account: _createTestAccount(
+                    id: 'test-friend-3',
+                    name: 'carol',
+                    nick: 'Carol',
+                  ),
+                  activities: [
+                    SnPresenceActivity(
+                      id: 'activity-1',
+                      type: 1,
+                      manualId: 'steam',
+                      title: 'Dyson Sphere Program',
+                      subtitle: 'Playing Dyson Sphere Program',
+                      caption: null,
+                      titleUrl: null,
+                      subtitleUrl: null,
+                      smallImage: null,
+                      largeImage: null,
+                      meta: null,
+                      leaseMinutes: 5,
+                      leaseExpiresAt: DateTime.now().add(Duration(hours: 1)),
+                      accountId: 'test-friend-3',
+                      createdAt: DateTime.now(),
+                      updatedAt: DateTime.now(),
+                      deletedAt: null,
+                    ),
+                  ],
+                  changeType: FriendStatusChangeType.activityStarted,
+                );
+                ref.read(friendStatusToastProvider.notifier).showEvent(event);
+              },
+            ),
+            ListTile(
+              minTileHeight: 48,
+              leading: const Icon(Symbols.music_note),
+              trailing: const Icon(Symbols.chevron_right),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+              title: const Text('Test friend music toast'),
+              onTap: () {
+                final event = FriendStatusChangeEvent(
+                  account: _createTestAccount(
+                    id: 'test-friend-4',
+                    name: 'david',
+                    nick: 'David',
+                  ),
+                  activities: [
+                    SnPresenceActivity(
+                      id: 'activity-2',
+                      type: 2,
+                      manualId: 'spotify',
+                      title: 'Blinding Lights',
+                      subtitle: 'The Weeknd - Blinding Lights',
+                      caption: null,
+                      titleUrl: null,
+                      subtitleUrl: null,
+                      smallImage: null,
+                      largeImage: null,
+                      meta: {
+                        'progress_ms': 120000,
+                        'track_duration_ms': 200000,
+                      },
+                      leaseMinutes: 5,
+                      leaseExpiresAt: DateTime.now().add(Duration(hours: 1)),
+                      accountId: 'test-friend-4',
+                      createdAt: DateTime.now(),
+                      updatedAt: DateTime.now(),
+                      deletedAt: null,
+                    ),
+                  ],
+                  changeType: FriendStatusChangeType.activityStarted,
+                );
+                ref.read(friendStatusToastProvider.notifier).showEvent(event);
+              },
+            ),
+            ListTile(
+              minTileHeight: 48,
+              leading: const Icon(Symbols.do_not_disturb_on),
+              trailing: const Icon(Symbols.chevron_right),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+              title: const Text('Test friend busy toast'),
+              onTap: () {
+                final event = FriendStatusChangeEvent(
+                  account: _createTestAccount(
+                    id: 'test-friend-5',
+                    name: 'eve',
+                    nick: 'Eve',
+                  ),
+                  status: SnAccountStatus(
+                    id: 'status-2',
+                    attitude: 2,
+                    isOnline: true,
+                    isCustomized: true,
+                    type: 1,
+                    label: 'In a meeting',
+                    symbol: 'calendar',
+                    meta: null,
+                    clearedAt: null,
+                    appIdentifier: null,
+                    isAutomated: false,
+                    accountId: 'test-friend-5',
+                    createdAt: DateTime.now(),
+                    updatedAt: DateTime.now(),
+                    deletedAt: null,
+                  ),
+                  changeType: FriendStatusChangeType.busy,
+                );
+                ref.read(friendStatusToastProvider.notifier).showEvent(event);
               },
             ),
             ListTile(

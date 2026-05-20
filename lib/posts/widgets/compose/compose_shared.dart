@@ -5,6 +5,8 @@ import 'package:island/core/config.dart';
 import 'package:island/posts/widgets/compose/compose_fund.dart';
 import 'package:island/posts/widgets/compose/compose_link_attachments.dart';
 import 'package:island/posts/widgets/compose/compose_livestream.dart';
+import 'package:island/posts/widgets/compose/compose_location_sheet.dart';
+import 'package:island/posts/widgets/compose/compose_meet_sheet.dart';
 import 'package:island/posts/widgets/compose/compose_poll.dart';
 import 'package:island/posts/widgets/compose/compose_recorder.dart';
 import 'package:island/posts/widgets/compose/compose_settings_sheet.dart';
@@ -53,8 +55,16 @@ class ComposeState {
   final ValueNotifier<String?> liveStreamId;
   // Linked fitness reference for this compose session (nullable)
   final ValueNotifier<String?> fitnessReference;
+  // Linked location embed fields (nullable)
+  final ValueNotifier<String?> locationName;
+  final ValueNotifier<String?> locationAddress;
+  final ValueNotifier<String?> locationWkt;
+  // Linked meet id for this compose session (nullable)
+  final ValueNotifier<String?> meetId;
   // Thumbnail id for article type post (nullable)
   final ValueNotifier<String?> thumbnailId;
+  // Collection IDs to assign the post to on creation
+  final ValueNotifier<List<String>> collectionIds;
   Timer? _autoSaveTimer;
 
   ComposeState({
@@ -79,12 +89,22 @@ class ComposeState {
     String? fundId,
     String? liveStreamId,
     String? fitnessReference,
+    String? locationName,
+    String? locationAddress,
+    String? locationWkt,
+    String? meetId,
     String? thumbnailId,
+    List<String>? collectionIds,
   }) : pollId = ValueNotifier<String?>(pollId),
        fundId = ValueNotifier<String?>(fundId),
        liveStreamId = ValueNotifier<String?>(liveStreamId),
        fitnessReference = ValueNotifier<String?>(fitnessReference),
+       locationName = ValueNotifier<String?>(locationName),
+       locationAddress = ValueNotifier<String?>(locationAddress),
+       locationWkt = ValueNotifier<String?>(locationWkt),
+       meetId = ValueNotifier<String?>(meetId),
        thumbnailId = ValueNotifier<String?>(thumbnailId),
+       collectionIds = ValueNotifier<List<String>>(collectionIds ?? []),
        cloudDraftId = ValueNotifier<String?>(cloudDraftId);
 
   void startAutoSave(WidgetRef ref) {
@@ -121,11 +141,15 @@ class ComposeLogic {
     // Initialize categories from original post
     final categories = originalPost?.categories ?? <SnPostCategory>[];
 
-    // Extract poll and fund IDs from embeds
+    // Extract embed IDs from original post embeds
     String? pollId;
     String? fundId;
     String? liveStreamId;
     String? fitnessReference;
+    String? locationName;
+    String? locationAddress;
+    String? locationWkt;
+    String? meetId;
     if (originalPost?.meta?['embeds'] is List) {
       final embeds = (originalPost!.meta!['embeds'] as List)
           .cast<Map<String, dynamic>>();
@@ -152,10 +176,25 @@ class ComposeLogic {
         );
         fitnessReference = '${fitnessEmbed['type']}:${fitnessEmbed['id']}';
       } catch (_) {}
+      try {
+        final locationEmbed = embeds.firstWhere((e) => e['type'] == 'location');
+        locationName = locationEmbed['name']?.toString();
+        locationAddress = locationEmbed['address']?.toString();
+        locationWkt = locationEmbed['wkt']?.toString();
+      } catch (_) {}
+      try {
+        final meetEmbed = embeds.firstWhere((e) => e['type'] == 'meet');
+        meetId = meetEmbed['id']?.toString();
+      } catch (_) {}
     }
 
     // Extract thumbnail ID from meta
     final thumbnailId = originalPost?.meta?['thumbnail'] as String?;
+
+    // Extract collection IDs from publisher collections
+    final collectionIds =
+        originalPost?.publisherCollections.map((c) => c.id).toList() ??
+        <String>[];
 
     return ComposeState(
       attachments: ValueNotifier<List<UniversalFile>>(
@@ -163,7 +202,7 @@ class ComposeLogic {
                 .map(
                   (e) => UniversalFile(
                     data: e,
-                    type: switch (e.mimeType?.split('/').firstOrNull) {
+                    type: switch (e.mimeType.split('/').firstOrNull) {
                       'image' => UniversalFileType.image,
                       'video' => UniversalFileType.video,
                       'audio' => UniversalFileType.audio,
@@ -198,13 +237,23 @@ class ComposeLogic {
       fundId: fundId,
       liveStreamId: liveStreamId,
       fitnessReference: fitnessReference,
+      locationName: locationName,
+      locationAddress: locationAddress,
+      locationWkt: locationWkt,
+      meetId: meetId,
       thumbnailId: thumbnailId,
+      collectionIds: collectionIds,
     );
   }
 
   static ComposeState createStateFromDraft(SnPost draft, {int postType = 0}) {
     final tags = draft.tags.map((tag) => tag.slug).toList();
     final thumbnailId = draft.meta?['thumbnail'] as String?;
+    final collectionIds =
+        (draft.meta?['collection_ids'] as List<dynamic>?)
+            ?.map((e) => e.toString())
+            .toList() ??
+        <String>[];
 
     return ComposeState(
       attachments: ValueNotifier<List<UniversalFile>>(
@@ -231,6 +280,7 @@ class ComposeLogic {
       fundId: null,
       liveStreamId: null,
       thumbnailId: thumbnailId,
+      collectionIds: collectionIds,
     );
   }
 
@@ -253,7 +303,7 @@ class ComposeLogic {
           try {
             final cloudFile = await ref
                 .read(driveFileUploaderProvider)
-                .createCloudFile(fileData: attachment)
+                .createCloudFile(fileData: attachment, usage: 'post')
                 .future;
             if (cloudFile != null) {
               // Update attachments list with cloud file
@@ -313,10 +363,25 @@ class ComposeLogic {
         {'type': 'livestream', 'id': state.liveStreamId.value},
       if (state.fitnessReference.value != null)
         ..._parseFitnessReference(state.fitnessReference.value!),
+      if (state.locationName.value != null ||
+          state.locationAddress.value != null ||
+          state.locationWkt.value != null)
+        {
+          'type': 'location',
+          if (state.locationName.value != null)
+            'name': state.locationName.value,
+          if (state.locationAddress.value != null)
+            'address': state.locationAddress.value,
+          if (state.locationWkt.value != null) 'wkt': state.locationWkt.value,
+        },
+      if (state.meetId.value != null)
+        {'type': 'meet', 'id': state.meetId.value},
     ];
     final meta = <String, dynamic>{
       if (state.postType == 1 && state.thumbnailId.value != null)
         'thumbnail': state.thumbnailId.value,
+      if (state.collectionIds.value.isNotEmpty)
+        'collection_ids': state.collectionIds.value,
       if (embeds.isNotEmpty) 'embeds': embeds,
     };
     final draft = SnPost(
@@ -347,7 +412,7 @@ class ComposeLogic {
       realm: state.realm.value,
       attachments: state.attachments.value
           .map((e) => e.data)
-          .whereType<SnCloudFile>()
+          .whereType<SnCloudFileReference>()
           .toList(),
       publisher: SnPublisher(
         id: state.currentPublisher.value?.id ?? '',
@@ -366,13 +431,15 @@ class ComposeLogic {
       ),
       reactions: [],
       tags: state.tags.value
-          .map((tag) => SnPostTag(
-                  id: tag,
-                  slug: tag,
-                  name: tag,
-                  createdAt: DateTime.now(),
-                  updatedAt: DateTime.now(),
-                ))
+          .map(
+            (tag) => SnPostTag(
+              id: tag,
+              slug: tag,
+              name: tag,
+              createdAt: DateTime.now(),
+              updatedAt: DateTime.now(),
+            ),
+          )
           .toList(),
       categories: state.categories.value,
       collections: [],
@@ -414,10 +481,21 @@ class ComposeLogic {
         'live_stream_id': state.liveStreamId.value,
       if (state.fitnessReference.value != null)
         'fitness_reference': state.fitnessReference.value,
+      if (state.locationName.value != null ||
+          state.locationAddress.value != null ||
+          state.locationWkt.value != null)
+        'location_name': state.locationName.value,
+      if (state.locationAddress.value != null)
+        'location_address': state.locationAddress.value,
+      if (state.locationWkt.value != null)
+        'location_wkt': state.locationWkt.value,
+      if (state.meetId.value != null) 'meet_id': state.meetId.value,
       if (state.postType == 1 && state.thumbnailId.value != null)
         'thumbnail_id': state.thumbnailId.value,
       if (state.embedView.value != null)
         'embed_view': state.embedView.value!.toJson(),
+      if (state.collectionIds.value.isNotEmpty)
+        'collection_ids': state.collectionIds.value,
       'drafted_at': now,
       'published_at': null,
     };
@@ -574,7 +652,7 @@ class ComposeLogic {
       ...state.attachments.value,
       UniversalFile(
         data: cloudFile,
-        type: switch (cloudFile.mimeType?.split('/').firstOrNull) {
+        type: switch (cloudFile.mimeType.split('/').firstOrNull) {
           'image' => UniversalFileType.image,
           'video' => UniversalFileType.video,
           'audio' => UniversalFileType.audio,
@@ -624,6 +702,7 @@ class ComposeLogic {
           .createCloudFile(
             fileData: attachment,
             poolId: poolId ?? selectedPoolId,
+            usage: 'post',
             mode: attachment.type == UniversalFileType.file
                 ? FileUploadMode.generic
                 : FileUploadMode.mediaSafe,
@@ -787,6 +866,54 @@ class ComposeLogic {
     state.fitnessReference.value = null;
   }
 
+  static Future<void> pickLocation(
+    WidgetRef ref,
+    ComposeState state,
+    BuildContext context,
+  ) async {
+    if (state.locationName.value != null ||
+        state.locationAddress.value != null ||
+        state.locationWkt.value != null) {
+      state.locationName.value = null;
+      state.locationAddress.value = null;
+      state.locationWkt.value = null;
+      return;
+    }
+
+    final location = await showModalBottomSheet<Map<String, String?>>(
+      context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
+      builder: (context) => const ComposeLocationSheet(),
+    );
+
+    if (location == null) return;
+    state.locationName.value = location['name'];
+    state.locationAddress.value = location['address'];
+    state.locationWkt.value = location['wkt'];
+  }
+
+  static Future<void> pickMeet(
+    WidgetRef ref,
+    ComposeState state,
+    BuildContext context,
+  ) async {
+    if (state.meetId.value != null) {
+      state.meetId.value = null;
+      return;
+    }
+
+    final meet = await showModalBottomSheet<String>(
+      context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
+      builder: (context) => const ComposeMeetSheet(),
+    );
+
+    if (meet == null) return;
+    state.meetId.value = meet;
+  }
+
   /// Unified submit method that returns the created/updated post.
   static Future<SnPost> performSubmit(
     WidgetRef ref,
@@ -863,10 +990,21 @@ class ComposeLogic {
           'live_stream_id': state.liveStreamId.value,
         if (state.fitnessReference.value != null)
           'fitness_reference': state.fitnessReference.value,
+        if (state.locationName.value != null ||
+            state.locationAddress.value != null ||
+            state.locationWkt.value != null)
+          'location_name': state.locationName.value,
+        if (state.locationAddress.value != null)
+          'location_address': state.locationAddress.value,
+        if (state.locationWkt.value != null)
+          'location_wkt': state.locationWkt.value,
+        if (state.meetId.value != null) 'meet_id': state.meetId.value,
         if (state.postType == 1 && state.thumbnailId.value != null)
           'thumbnail_id': state.thumbnailId.value,
         if (state.embedView.value != null)
           'embed_view': state.embedView.value!.toJson(),
+        if (state.collectionIds.value.isNotEmpty)
+          'collection_ids': state.collectionIds.value,
       };
 
       final publisherName = state.currentPublisher.value?.name;
@@ -1052,7 +1190,12 @@ class ComposeLogic {
     state.fundId.dispose();
     state.liveStreamId.dispose();
     state.fitnessReference.dispose();
+    state.locationName.dispose();
+    state.locationAddress.dispose();
+    state.locationWkt.dispose();
+    state.meetId.dispose();
     state.thumbnailId.dispose();
+    state.collectionIds.dispose();
     state.cloudDraftId.dispose();
   }
 }

@@ -59,6 +59,11 @@ _SnCheckInResult _$SnCheckInResultFromJson(Map<String, dynamic> json) =>
       tips: (json['tips'] as List<dynamic>)
           .map((e) => SnFortuneTip.fromJson(e as Map<String, dynamic>))
           .toList(),
+      fortuneReport: json['fortune_report'] == null
+          ? null
+          : SnCheckInFortuneReport.fromJson(
+              json['fortune_report'] as Map<String, dynamic>,
+            ),
       accountId: json['account_id'] as String,
       account: json['account'] == null
           ? null
@@ -75,12 +80,57 @@ Map<String, dynamic> _$SnCheckInResultToJson(_SnCheckInResult instance) =>
       'id': instance.id,
       'level': instance.level,
       'tips': instance.tips.map((e) => e.toJson()).toList(),
+      'fortune_report': instance.fortuneReport?.toJson(),
       'account_id': instance.accountId,
       'account': instance.account?.toJson(),
       'created_at': instance.createdAt.toIso8601String(),
       'updated_at': instance.updatedAt.toIso8601String(),
       'deleted_at': instance.deletedAt?.toIso8601String(),
     };
+
+_SnCheckInFortuneReport _$SnCheckInFortuneReportFromJson(
+  Map<String, dynamic> json,
+) => _SnCheckInFortuneReport(
+  version: (json['version'] as num).toInt(),
+  poem: json['poem'] as String,
+  summary: json['summary'] as String,
+  summaryDetail: json['summary_detail'] as String?,
+  wish: json['wish'] as String,
+  love: json['love'] as String,
+  study: json['study'] as String,
+  career: json['career'] as String,
+  health: json['health'] as String,
+  lostItem: json['lost_item'] as String,
+  luckyColor: json['lucky_color'] as String,
+  luckyDirection: json['lucky_direction'] as String,
+  luckyTime: json['lucky_time'] as String,
+  luckyItem: json['lucky_item'] as String,
+  luckyAction: json['lucky_action'] as String,
+  avoidAction: json['avoid_action'] as String,
+  ritual: json['ritual'] as String,
+);
+
+Map<String, dynamic> _$SnCheckInFortuneReportToJson(
+  _SnCheckInFortuneReport instance,
+) => <String, dynamic>{
+  'version': instance.version,
+  'poem': instance.poem,
+  'summary': instance.summary,
+  'summary_detail': instance.summaryDetail,
+  'wish': instance.wish,
+  'love': instance.love,
+  'study': instance.study,
+  'career': instance.career,
+  'health': instance.health,
+  'lost_item': instance.lostItem,
+  'lucky_color': instance.luckyColor,
+  'lucky_direction': instance.luckyDirection,
+  'lucky_time': instance.luckyTime,
+  'lucky_item': instance.luckyItem,
+  'lucky_action': instance.luckyAction,
+  'avoid_action': instance.avoidAction,
+  'ritual': instance.ritual,
+};
 
 _SnFortuneTip _$SnFortuneTipFromJson(Map<String, dynamic> json) =>
     _SnFortuneTip(

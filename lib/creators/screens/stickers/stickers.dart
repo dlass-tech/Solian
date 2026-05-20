@@ -24,7 +24,10 @@ part 'stickers.g.dart';
 @RoutePage()
 class CreatorStickerListScreen extends HookConsumerWidget {
   final String pubName;
-  const CreatorStickerListScreen({super.key, required this.pubName});
+  const CreatorStickerListScreen({
+    super.key,
+    @PathParam("pubName") required this.pubName,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -221,6 +224,7 @@ class StickerPackForm extends HookConsumerWidget {
                         context: context,
                         builder: (context) => CloudFilePicker(
                           allowedTypes: {UniversalFileType.image},
+                          usage: 'sticker',
                         ),
                       ).then((value) {
                         if (value == null) return;

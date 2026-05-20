@@ -474,6 +474,7 @@ class MeetScreen extends HookConsumerWidget {
                   isScrollControlled: true,
                   builder: (context) => const CloudFilePicker(
                     allowedTypes: {UniversalFileType.image},
+                    usage: 'meet',
                   ),
                 );
                 if (result != null) {
@@ -2509,7 +2510,7 @@ class _MeetDiscoverySection extends HookConsumerWidget {
                       urlTemplate:
                           'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                       userAgentPackageName:
-                          'Dynamic/1.0 (+https://dy.ci, contact: sn@dy.ci)',
+                          'Solian/1.0 (+https://solian.app, contact: lily@solsynth.dev)',
                     ),
                     RichAttributionWidget(
                       attributions: [
@@ -3487,7 +3488,7 @@ class _MeetLocationMapCard extends StatelessWidget {
                   retinaMode: true,
                   urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                   userAgentPackageName:
-                      'Dynamic/1.0 (+https://dy.ci, contact: sn@dy.ci)',
+                      'Solian/1.0 (+https://solian.app, contact: lily@solsynth.dev)',
                 ),
                 RichAttributionWidget(
                   attributions: [
@@ -3788,7 +3789,7 @@ class _MeetPinsMapCard extends StatelessWidget {
               retinaMode: true,
               urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
               userAgentPackageName:
-                  'Dynamic/1.0 (+https://dy.ci, contact: sn@dy.ci)',
+                  'Solian/1.0 (+https://solian.app, contact: lily@solsynth.dev)',
             ),
             RichAttributionWidget(
               attributions: [
@@ -3899,7 +3900,7 @@ class _MeetPinsMapCard extends StatelessWidget {
 class _MeetParticipantPin extends StatelessWidget {
   final String name;
   final Color color;
-  final SnCloudFile? avatar;
+  final IDisplayableCloudFile? avatar;
   final String? accountName;
 
   const _MeetParticipantPin({

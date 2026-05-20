@@ -2,28 +2,33 @@
 #define AppVersion "3.3.0"
 #define BuildNumber "144"
 ; ==================================================
+
 #define FullVersion AppVersion + "." + BuildNumber
 
 [Setup]
-AppName=Dynamic
+AppName=Solian
 AppVersion={#AppVersion}
-AppPublisher=zhaishis
-AppPublisherURL=https://zhaishis.com
-AppSupportURL=https://zhaishis.com
-AppUpdatesURL=https://github.com/dlass-tech/Solian/releases
-AppCopyright=Copyright © 2026 zhaishis
+AppPublisher=Solsynth
+AppPublisherURL=https://solsynth.dev
+AppSupportURL=https://kb.solsynth.dev/zh/solar-network
+AppUpdatesURL=https://github.com/Solsynth/Solian/releases
+AppCopyright=Copyright © 2025 Solsynth
 VersionInfoVersion={#FullVersion}
-UninstallDisplayName=Dynamic
-UninstallDisplayIcon={app}\Dynamic.exe
-DefaultDirName={commonpf}\Dynamic
+UninstallDisplayName=Solian
+UninstallDisplayIcon={app}\Solian.exe
+
+DefaultDirName={commonpf}\Solian
 UsePreviousAppDir=no
+
 OutputDir=.\Installer
 OutputBaseFilename=windows-x86_64-setup
-SetupIconFile=.\assets\icons\icon.ico
+SetupIconFile=.\assets\icons\icon.ico  
+
 Compression=lzma2/ultra64
 SolidCompression=yes
 LZMAUseSeparateProcess=yes
 LZMANumBlockThreads=4
+
 ArchitecturesAllowed=x64compatible
 PrivilegesRequired=admin
 
@@ -31,17 +36,17 @@ PrivilegesRequired=admin
 Source: ".\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\Dynamic"; Filename: "{app}\Dynamic.exe"; IconFilename: "{app}\Dynamic.exe"
-Name: "{group}\{cm:UninstallProgram,Dynamic}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\Dynamic"; Filename: "{app}\Dynamic.exe"; Tasks: desktopicon
+Name: "{group}\Solian"; Filename: "{app}\Solian.exe";IconFilename: "{app}\Solian.exe"
+Name: "{group}\{cm:UninstallProgram,Solian}"; Filename: "{uninstallexe}"
+Name: "{autodesktop}\Solian"; Filename: "{app}\Solian.exe"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Run]
-Filename: "{app}\Dynamic.exe"; Description: "启动每刻社区"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\Solian.exe"; Description: "Launch Solian"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
-Type: filesandordirs; Name: "{userappdata}\zhaishis\Dynamic"
-Type: files; Name: "{group}\Dynamic.lnk"
-Type: files; Name: "{autodesktop}\Dynamic.lnk"
+Type: filesandordirs; Name: "{userappdata}\dev.solsynth\Solian"
+Type: files; Name: "{group}\Solian.lnk" ;
+Type: files; Name: "{autodesktop}\Solian.lnk" ;

@@ -9,16 +9,19 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:island/drive/screens/file_list.dart';
 import 'package:island/drive/screens/file_pool.dart';
 import 'package:island/drive/drive_service.dart';
+import 'package:island/core/network.dart';
 import 'package:island/drive/widgets/quota_sidebar.dart';
 import 'package:island/shared/widgets/alert.dart';
 import 'package:island/shared/widgets/app_scaffold.dart';
 import 'package:island/shared/widgets/layouts/sheet_scaffold.dart';
 import 'package:island/shared/widgets/responsive_sidebar.dart';
 import 'package:island/drive/widgets/file_list_view.dart';
-import 'package:island/accounts/usage_overview.dart';
+import 'package:island/core/widgets/content/file_info_sheet.dart';
+import 'package:island/drive/file_permissions.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:styled_widget/styled_widget.dart';
 import 'package:solar_network_sdk/solar_network_sdk.dart';
+import 'package:island/drive/widgets/usage_overview.dart';
 
 @RoutePage()
 class FileListScreen extends HookConsumerWidget {
@@ -44,40 +47,57 @@ class FileListScreen extends HookConsumerWidget {
     // Notifiers should be read fresh each time to avoid disposal issues
 
     // Sidebar content widget
-    final sidebarContent = poolsAsync.when(
-      data: (pools) => usageAsync.when(
-        data: (usage) => quotaAsync.when(
-          data: (quota) => QuotaSidebarWidget(
-            usage: usage,
-            quota: quota,
-            pools: pools,
-            selectedPool: selectedPool.value,
-            onPoolSelected: (pool) {
-              selectedPool.value = pool;
-              if (mode.value == FileListMode.unindexed) {
-                ref.read(unindexedFileListProvider.notifier).setPool(pool?.id);
-              } else {
-                ref
-                    .read(indexedCloudFileListProvider.notifier)
-                    .setPool(pool?.id);
-              }
-            },
-            onViewDetails: () => _showUsageSheet(context, usage, quota),
-          ),
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (_, _) => Center(child: Text('errorLoadingQuota'.tr())),
-        ),
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (_, _) => Center(child: Text('errorLoadingUsage'.tr())),
-      ),
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (_, _) => Center(child: Text('errorLoadingPools'.tr())),
-    );
+    final inspectorFile = ref.watch(driveInspectorFileProvider);
+
+    final sidebarContent = inspectorFile != null
+        ? FileInspectorSheet(key: ValueKey(inspectorFile.id))
+        : poolsAsync.when(
+            data: (pools) => usageAsync.when(
+              data: (usage) => quotaAsync.when(
+                data: (quota) => QuotaSidebarWidget(
+                  usage: usage,
+                  quota: quota,
+                  pools: pools,
+                  selectedPool: selectedPool.value,
+                  onPoolSelected: (pool) {
+                    ref.read(driveInspectorFileProvider.notifier).setFile(null);
+                    selectedPool.value = pool;
+                    if (mode.value == FileListMode.unindexed) {
+                      ref
+                          .read(unindexedFileListProvider.notifier)
+                          .setPool(pool?.id);
+                    } else {
+                      ref
+                          .read(indexedCloudFileListProvider.notifier)
+                          .setPool(pool?.id);
+                    }
+                  },
+                  onViewDetails: () => _showUsageSheet(context, usage, quota),
+                ),
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (_, _) => Center(child: Text('errorLoadingQuota'.tr())),
+              ),
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (_, _) => Center(child: Text('errorLoadingUsage'.tr())),
+            ),
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (_, _) => Center(child: Text('errorLoadingPools'.tr())),
+          );
 
     // Drawer builder for narrow screens - uses builder to access providers
     Consumer drawerBuilder(BuildContext sheetContext) {
       return Consumer(
         builder: (context, ref, _) {
+          final inspector = ref.watch(driveInspectorFileProvider);
+          if (inspector != null) {
+            return FileInfoSheet(
+              item: inspector,
+              onClose: () {
+                ref.read(driveInspectorFileProvider.notifier).setFile(null);
+                Navigator.of(sheetContext).pop();
+              },
+            );
+          }
           final usage = ref.watch(billingUsageProvider);
           final quota = ref.watch(billingQuotaProvider);
           final pools = ref.watch(poolsProvider);
@@ -152,8 +172,8 @@ class FileListScreen extends HookConsumerWidget {
             ),
             onPressed: () => isSelectionMode.value = !isSelectionMode.value,
             tooltip: isSelectionMode.value
-                ? 'exitSelectionMode'
-                : 'enterSelectionMode',
+                ? 'exitSelectionMode'.tr()
+                : 'enterSelectionMode'.tr(),
           ),
 
           // Recycle toggle (only in unindexed mode)
@@ -176,7 +196,14 @@ class FileListScreen extends HookConsumerWidget {
           // Storage sidebar toggle
           IconButton(
             icon: const Icon(Symbols.storage),
-            onPressed: () => showSidebar.value = !showSidebar.value,
+            onPressed: () {
+              if (showSidebar.value) {
+                showSidebar.value = false;
+                ref.read(driveInspectorFileProvider.notifier).setFile(null);
+              } else {
+                showSidebar.value = true;
+              }
+            },
             tooltip: 'storageOverview'.tr(),
           ),
           const Gap(8),
@@ -206,7 +233,16 @@ class FileListScreen extends HookConsumerWidget {
               currentPath.value,
               selectedPool.value?.id,
             ),
-            onShowCreateDirectory: _showCreateDirectoryDialog,
+            onShowCreateFolder: () => _showCreateFolderDialog(
+              context,
+              ref,
+              currentPath.value,
+              selectedPool.value?.id,
+            ),
+            onInspectFile: (file) {
+              ref.read(driveInspectorFileProvider.notifier).setFile(file);
+              showSidebar.value = true;
+            },
             mode: mode,
             viewMode: viewMode,
             isSelectionMode: isSelectionMode,
@@ -285,66 +321,128 @@ class FileListScreen extends HookConsumerWidget {
     }
   }
 
-  Future<void> _showCreateDirectoryDialog(
+  Future<void> _showCreateFolderDialog(
     BuildContext context,
-    ValueNotifier<String> currentPath,
+    WidgetRef ref,
+    String currentPath,
+    String? poolId,
   ) async {
-    final controller = TextEditingController(text: currentPath.value);
-    String? newPath;
-
-    void handleChangeDirectory(BuildContext context) {
-      newPath = controller.text.trim();
-      if (newPath!.isNotEmpty) {
-        String fullPath = newPath!;
-
-        if (!fullPath.startsWith('/')) {
-          fullPath = '/$fullPath';
-        }
-
-        fullPath = fullPath.replaceAll(RegExp(r'/+'), '/');
-
-        currentPath.value = fullPath;
-        Navigator.of(context).pop();
-      }
-    }
+    final formKey = GlobalKey<FormState>();
+    final nameController = TextEditingController();
+    bool isCreating = false;
 
     await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('navigateToDirectory').tr(),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Gap(8),
-            TextField(
-              controller: controller,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: Text('createNewFolder').tr(),
+          content: Form(
+            key: formKey,
+            child: TextFormField(
+              controller: nameController,
               decoration: InputDecoration(
-                labelText: 'directoryPath'.tr(),
-                hintText: 'directoryPathHint'.tr(),
-                helperText: 'directoryPathHelper'.tr(),
-                helperMaxLines: 3,
+                labelText: 'folderName'.tr(),
+                hintText: 'folderNameHint'.tr(),
                 border: const OutlineInputBorder(
                   borderRadius: BorderRadius.all(Radius.circular(12)),
                 ),
               ),
-              onSubmitted: (_) {
-                handleChangeDirectory(context);
+              autofocus: true,
+              enabled: !isCreating,
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return 'folderNameRequired'.tr();
+                }
+                if (value.contains(RegExp(r'[/\\:*?"<>|]'))) {
+                  return 'folderNameInvalid'.tr();
+                }
+                if (value.length > 255) {
+                  return 'folderNameTooLong'.tr();
+                }
+                return null;
               },
+              onFieldSubmitted: (_) async {
+                if (formKey.currentState!.validate()) {
+                  setState(() => isCreating = true);
+                  try {
+                    final driveApi = ref.read(solarNetworkClientProvider).drive;
+                    final uploader = ref.read(driveFileUploaderProvider);
+                    final parentId = await uploader.resolveParentIdFromPath(
+                      path: currentPath,
+                      poolId: poolId,
+                    );
+                    await driveApi.createFolder(
+                      name: nameController.text.trim(),
+                      parentId: parentId,
+                    );
+                    if (dialogContext.mounted) {
+                      Navigator.of(dialogContext).pop();
+                    }
+                    ref.invalidate(indexedCloudFileListProvider);
+                    showSnackBar('folderCreated'.tr());
+                  } catch (e) {
+                    if (context.mounted) {
+                      setState(() => isCreating = false);
+                      showSnackBar(
+                        'folderCreationFailed'.tr(args: [e.toString()]),
+                      );
+                    }
+                  }
+                }
+              },
+              onTapOutside: (_) =>
+                  FocusManager.instance.primaryFocus?.unfocus(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: isCreating ? null : () => Navigator.of(context).pop(),
+              child: Text('cancel').tr(),
+            ),
+            TextButton.icon(
+              onPressed: isCreating
+                  ? null
+                  : () async {
+                      if (!formKey.currentState!.validate()) return;
+                      setState(() => isCreating = true);
+                      try {
+                        final driveApi = ref
+                            .read(solarNetworkClientProvider)
+                            .drive;
+                        final uploader = ref.read(driveFileUploaderProvider);
+                        final parentId = await uploader.resolveParentIdFromPath(
+                          path: currentPath,
+                          poolId: poolId,
+                        );
+                        await driveApi.createFolder(
+                          name: nameController.text.trim(),
+                          parentId: parentId,
+                        );
+                        if (dialogContext.mounted) {
+                          Navigator.of(dialogContext).pop();
+                        }
+                        ref.invalidate(indexedCloudFileListProvider);
+                        showSnackBar('folderCreated'.tr());
+                      } catch (e) {
+                        if (context.mounted) {
+                          setState(() => isCreating = false);
+                          showSnackBar(
+                            'folderCreationFailed'.tr(args: [e.toString()]),
+                          );
+                        }
+                      }
+                    },
+              label: isCreating
+                  ? SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Text('createDirectory').tr(),
+              icon: const Icon(Symbols.create_new_folder),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text('cancel').tr(),
-          ),
-          TextButton.icon(
-            onPressed: () => handleChangeDirectory(context),
-            label: Text('goToDirectory').tr(),
-            icon: const Icon(Symbols.arrow_right_alt),
-          ),
-        ],
       ),
     );
   }
@@ -385,7 +483,12 @@ class FileListScreen extends HookConsumerWidget {
               title: Text('createDirectory').tr(),
               onTap: () {
                 Navigator.of(context).pop();
-                _showCreateDirectoryDialog(context, currentPath);
+                _showCreateFolderDialog(
+                  context,
+                  ref,
+                  currentPath.value,
+                  selectedPool.value?.id,
+                );
               },
             ),
             ListTile(

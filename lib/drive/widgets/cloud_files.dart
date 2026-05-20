@@ -21,7 +21,7 @@ import 'package:island/core/data_saving_gate.dart';
 import 'package:solar_network_sdk/solar_network_sdk.dart';
 
 class CloudFileWidget extends HookConsumerWidget {
-  final SnCloudFile item;
+  final IDisplayableCloudFile item;
   final BoxFit fit;
   final String? heroTag;
   final bool noBlurhash;
@@ -41,36 +41,43 @@ class CloudFileWidget extends HookConsumerWidget {
       appSettingsProvider.select((s) => s.dataSavingMode),
     );
     final serverUrl = ref.watch(serverUrlProvider);
-    final uri = item.url ?? '$serverUrl/drive/files/${item.id}';
+    final uri = item.storageUrl ?? '$serverUrl/drive/files/${item.id}';
 
     final unlocked = useState(false);
 
-    final meta = item.fileMeta is Map ? (item.fileMeta as Map) : const {};
-    final isEncrypted = DriveE2eeFileEnvelope.isEncryptedFile(item);
-    final e2eeMeta = meta['e2ee'] is Map
-        ? Map<String, dynamic>.from(meta['e2ee'] as Map)
-        : const <String, dynamic>{};
+    final meta = item.fileMeta as Map;
+    final rawE2eeMeta = meta['e2ee'];
+    final e2eeMeta = rawE2eeMeta is Map ? Map<String, dynamic>.from(rawE2eeMeta) : <String, dynamic>{};
+    final isEncrypted = e2eeMeta['scheme']?.toString().isNotEmpty == true;
     final e2eeScheme = e2eeMeta['scheme']?.toString();
-    final blurHash = noBlurhash ? null : (meta['blur'] as String?);
-    var ratio = meta['ratio'] is num ? (meta['ratio'] as num).toDouble() : 1.0;
+    final blurHash = noBlurhash ? null : item.blurhash;
+    var ratio = item.ratio ?? 1.0;
     if (ratio == 0) ratio = 1.0;
 
-    Widget cloudImage() =>
+Widget cloudImage() =>
         UniversalImage(uri: uri, blurHash: blurHash, fit: fit);
-    Widget cloudVideo() => CloudVideoWidget(item: item);
-
-    Widget dataPlaceHolder(IconData icon) => _DataSavingPlaceholder(
-      icon: icon,
-      onTap: () {
-        unlocked.value = true;
-      },
-    );
-
-    if (isEncrypted) {
-      return _EncryptedFileCard(item: item, scheme: e2eeScheme);
+    Widget cloudVideo() {
+      if (item is SnCloudFile) {
+        return CloudVideoWidget(item: item as SnCloudFile);
+      }
+      return const SizedBox();
     }
 
-    if (item.mimeType?.startsWith('text/') == true) {
+    Widget dataPlaceHolder(IconData icon) => _DataSavingPlaceholder(
+          icon: icon,
+          onTap: () {
+            unlocked.value = true;
+          },
+        );
+
+    if (isEncrypted) {
+      if (item is SnCloudFile) {
+        return _EncryptedFileCard(item: item as SnCloudFile, scheme: e2eeScheme);
+      }
+      return const SizedBox();
+    }
+
+    if (item.mimeType.startsWith('text/') == true) {
       return Container(
         height: 400,
         decoration: BoxDecoration(
@@ -151,7 +158,9 @@ class CloudFileWidget extends HookConsumerWidget {
                         size: 16,
                       ),
                       onPressed: () {
-                        context.router.push(FileDetailRoute(item: item));
+                        if (item is SnCloudFile) {
+                          context.router.push(FileDetailRoute(id: item.id));
+                        }
                       },
                       padding: EdgeInsets.all(4),
                       constraints: const BoxConstraints(),
@@ -166,7 +175,7 @@ class CloudFileWidget extends HookConsumerWidget {
       );
     }
 
-    var content = switch (item.mimeType?.split('/').firstOrNull) {
+    var content = switch (item.mimeType.split('/').firstOrNull) {
       'image' => AspectRatio(
         aspectRatio: ratio,
         child: (useInternalGate && dataSaving && !unlocked.value)
@@ -179,7 +188,12 @@ class CloudFileWidget extends HookConsumerWidget {
             ? dataPlaceHolder(Symbols.play_arrow)
             : cloudVideo(),
       ),
-      'audio' => AudioFileContent(item: item, uri: uri),
+      'audio' => () {
+          if (item is SnCloudFile) {
+            return AudioFileContent(item: item as SnCloudFile, uri: uri);
+          }
+          return const SizedBox();
+        }(),
       _ => Builder(
         builder: (context) {
           return Container(
@@ -222,7 +236,9 @@ class CloudFileWidget extends HookConsumerWidget {
                   children: [
                     TextButton.icon(
                       onPressed: () {
-                        context.router.push(FileDetailRoute(item: item));
+                        if (item is SnCloudFile) {
+                          context.router.push(FileDetailRoute(id: item.id));
+                        }
                       },
                       icon: const Icon(Symbols.info),
                       label: Text('info').tr(),
@@ -300,7 +316,7 @@ class _EncryptedFileCard extends ConsumerWidget {
               ),
               TextButton.icon(
                 onPressed: () {
-                  context.router.push(FileDetailRoute(item: item));
+                   context.router.push(FileDetailRoute(id: item.id));
                 },
                 icon: const Icon(Symbols.info),
                 label: Text('info').tr(),
@@ -355,7 +371,7 @@ class CloudVideoWidget extends HookConsumerWidget {
     if (DriveE2eeFileEnvelope.isEncryptedFile(item)) {
       return _EncryptedFileCard(
         item: item,
-        scheme: (item.fileMeta is Map && (item.fileMeta as Map)['e2ee'] is Map)
+        scheme: ((item.fileMeta as Map)['e2ee'] is Map)
             ? ((item.fileMeta as Map)['e2ee'] as Map)['scheme']?.toString()
             : null,
       );
@@ -364,9 +380,7 @@ class CloudVideoWidget extends HookConsumerWidget {
     final serverUrl = ref.watch(serverUrlProvider);
     final uri = '$serverUrl/drive/files/${item.id}';
 
-    var ratio = item.fileMeta?['ratio'] is num
-        ? item.fileMeta!['ratio'].toDouble()
-        : 1.0;
+    var ratio = item.ratio ?? 1.0;
     if (ratio == 0) ratio = 1.0;
 
     return GestureDetector(
@@ -423,11 +437,11 @@ class CloudVideoWidget extends HookConsumerWidget {
                 Wrap(
                   spacing: 8,
                   children: [
-                    if (item.fileMeta?['duration'] != null)
+                    if (item.fileMeta['duration'] != null)
                       Text(
                         Duration(
                           milliseconds:
-                              ((item.fileMeta?['duration'] as num) * 1000)
+                              ((item.fileMeta['duration'] as num) * 1000)
                                   .toInt(),
                         ).formatDuration(),
                         style: TextStyle(
@@ -442,9 +456,9 @@ class CloudVideoWidget extends HookConsumerWidget {
                           ],
                         ),
                       ),
-                    if (item.fileMeta?['bit_rate'] != null)
+                    if (item.fileMeta['bit_rate'] != null)
                       Text(
-                        '${int.parse(item.fileMeta?['bit_rate'] as String) ~/ 1000} Kbps',
+                        '${int.parse(item.fileMeta['bit_rate'] as String) ~/ 1000} Kbps',
                         style: TextStyle(
                           color: Colors.white,
                           shadows: [
@@ -482,7 +496,7 @@ class CloudVideoWidget extends HookConsumerWidget {
         ],
       ),
       onTap: () {
-        context.router.push(FileDetailRoute(item: item));
+         context.router.push(FileDetailRoute(id: item.id));
       },
     );
   }
@@ -490,7 +504,7 @@ class CloudVideoWidget extends HookConsumerWidget {
 
 class CloudImageWidget extends ConsumerWidget {
   final String? fileId;
-  final SnCloudFile? file;
+  final IDisplayableCloudFile? file;
   final BoxFit fit;
   final double aspectRatio;
   final String? blurHash;
@@ -508,7 +522,8 @@ class CloudImageWidget extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final serverUrl = ref.watch(serverUrlProvider);
-    final uri = file?.url ?? '$serverUrl/drive/files/${file?.id ?? fileId}';
+    final uri =
+        file?.storageUrl ?? '$serverUrl/drive/files/${file?.id ?? fileId}';
 
     return AspectRatio(
       aspectRatio: aspectRatio,
@@ -523,12 +538,12 @@ class CloudImageWidget extends ConsumerWidget {
   }
 
   static ImageProvider provider({
-    required SnCloudFile file,
+    required IDisplayableCloudFile file,
     required String serverUrl,
     bool original = false,
   }) {
     final uri =
-        file.url ??
+        file.storageUrl ??
         (original
             ? '$serverUrl/drive/files/${file.id}?original=true'
             : '$serverUrl/drive/files/${file.id}');
@@ -538,7 +553,7 @@ class CloudImageWidget extends ConsumerWidget {
 
 class ProfilePictureWidget extends ConsumerWidget {
   final String? fileId;
-  final SnCloudFile? file;
+  final IDisplayableCloudFile? file;
   final double radius;
   final double? borderRadius;
   final IconData? fallbackIcon;
@@ -560,8 +575,7 @@ class ProfilePictureWidget extends ConsumerWidget {
     final serverUrl = ref.watch(serverUrlProvider);
     final String? id = file?.id ?? fileId;
 
-    final meta = file?.fileMeta is Map ? (file!.fileMeta as Map) : const {};
-    final blurHash = meta['blur'] as String?;
+    final blurHash = file?.blurhash;
 
     final fallback = Icon(
       fallbackIcon ?? Symbols.account_circle,
@@ -612,7 +626,7 @@ class ProfilePictureWidget extends ConsumerWidget {
 }
 
 class SplitAvatarWidget extends ConsumerWidget {
-  final List<SnCloudFile?> files;
+  final List<IDisplayableCloudFile?> files;
   final double radius;
   final IconData fallbackIcon;
   final Color? fallbackColor;
@@ -735,7 +749,7 @@ class SplitAvatarWidget extends ConsumerWidget {
 
   Widget _buildQuadrant(
     BuildContext context,
-    SnCloudFile? file,
+    IDisplayableCloudFile? file,
     WidgetRef ref,
     double radius,
   ) {

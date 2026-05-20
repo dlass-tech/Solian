@@ -19,6 +19,8 @@ import 'package:windows_notification/windows_notification.dart' as winty;
 import 'package:windows_notification/notification_message.dart';
 import 'package:solar_network_sdk/solar_network_sdk.dart';
 
+import 'udid.dart';
+
 // Windows notification instance
 winty.WindowsNotification? windowsNotification;
 
@@ -66,7 +68,7 @@ Future<void> _speakNotification(
 
 Future<void> initializeLocalNotifications(WidgetRef _) async {
   // Initialize Windows notification for Windows platform
-  windowsNotification = winty.WindowsNotification(applicationId: "Dynamic");
+  windowsNotification = winty.WindowsNotification(applicationId: "Solian");
 
   WidgetsBinding.instance.addObserver(
     LifecycleEventHandler(onAppLifecycleChanged: _onAppLifecycleChanged),
@@ -223,6 +225,10 @@ Future<void> subscribePushNotification(
 Future<void> _putTokenToRemote(Dio apiClient, String token, int type) async {
   await apiClient.put(
     "/ring/notifications/subscription",
-    data: {"type": type, "device_token": token},
+    data: {
+      "type": type,
+      "device_token": token,
+      "device_name": await getDeviceName(),
+    },
   );
 }

@@ -97,67 +97,119 @@ Map<String, dynamic> _$SnCloudFileObjectToJson(_SnCloudFileObject instance) =>
 
 _SnCloudFile _$SnCloudFileFromJson(Map<String, dynamic> json) => _SnCloudFile(
   id: json['id'] as String,
-  name: json['name'] as String,
+  accountId: json['account_id'] as String,
   description: json['description'] as String?,
-  fileMeta: json['file_meta'] as Map<String, dynamic>?,
-  userMeta: json['user_meta'] as Map<String, dynamic>?,
+  indexed: json['indexed'] as bool,
+  isFolder: json['is_folder'] as bool,
+  isMarkedRecycle: json['is_marked_recycle'] as bool,
+  name: json['name'] as String,
+  object: json['object'] == null
+      ? null
+      : SnCloudFileObject.fromJson(json['object'] as Map<String, dynamic>),
+  objectId: json['object_id'] as String?,
+  parentId: json['parent_id'] as String?,
+  resourceIdentifier: json['resource_identifier'] as String,
+  storageId: json['storage_id'] as String?,
+  storageUrl: json['storage_url'] as String?,
+  mimeType: json['mime_type'] as String,
+  applicationType: json['application_type'] as String?,
+  usage: json['usage'] as String?,
   sensitiveMarks:
       (json['sensitive_marks'] as List<dynamic>?)
           ?.map((e) => (e as num).toInt())
           .toList() ??
       const [],
-  mimeType: json['mime_type'] as String?,
-  hash: json['hash'] as String?,
-  size: (json['size'] as num).toInt(),
+  fileMeta: json['file_meta'] as Map<String, dynamic>? ?? const {},
+  userMeta: json['user_meta'] as Map<String, dynamic>? ?? const {},
+  childrenCount: (json['children_count'] as num?)?.toInt() ?? 0,
+  permissionStatus: json['permission_status'] == null
+      ? null
+      : SnFilePermissionStatus.fromJson(
+          json['permission_status'] as Map<String, dynamic>,
+        ),
   uploadedAt: json['uploaded_at'] == null
       ? null
       : DateTime.parse(json['uploaded_at'] as String),
-  createdAt: DateTime.parse(json['created_at'] as String),
+  expiredAt: json['expired_at'] == null
+      ? null
+      : DateTime.parse(json['expired_at'] as String),
   updatedAt: DateTime.parse(json['updated_at'] as String),
+  createdAt: DateTime.parse(json['created_at'] as String),
   deletedAt: json['deleted_at'] == null
       ? null
       : DateTime.parse(json['deleted_at'] as String),
-  url: json['url'] as String?,
 );
 
 Map<String, dynamic> _$SnCloudFileToJson(_SnCloudFile instance) =>
     <String, dynamic>{
       'id': instance.id,
-      'name': instance.name,
+      'account_id': instance.accountId,
       'description': instance.description,
+      'indexed': instance.indexed,
+      'is_folder': instance.isFolder,
+      'is_marked_recycle': instance.isMarkedRecycle,
+      'name': instance.name,
+      'object': instance.object?.toJson(),
+      'object_id': instance.objectId,
+      'parent_id': instance.parentId,
+      'resource_identifier': instance.resourceIdentifier,
+      'storage_id': instance.storageId,
+      'storage_url': instance.storageUrl,
+      'mime_type': instance.mimeType,
+      'application_type': instance.applicationType,
+      'usage': instance.usage,
+      'sensitive_marks': instance.sensitiveMarks,
       'file_meta': instance.fileMeta,
       'user_meta': instance.userMeta,
-      'sensitive_marks': instance.sensitiveMarks,
-      'mime_type': instance.mimeType,
-      'hash': instance.hash,
-      'size': instance.size,
+      'children_count': instance.childrenCount,
+      'permission_status': instance.permissionStatus?.toJson(),
       'uploaded_at': instance.uploadedAt?.toIso8601String(),
-      'created_at': instance.createdAt.toIso8601String(),
+      'expired_at': instance.expiredAt?.toIso8601String(),
       'updated_at': instance.updatedAt.toIso8601String(),
-      'deleted_at': instance.deletedAt?.toIso8601String(),
-      'url': instance.url,
-    };
-
-_SnCloudFileIndex _$SnCloudFileIndexFromJson(Map<String, dynamic> json) =>
-    _SnCloudFileIndex(
-      id: json['id'] as String,
-      path: json['path'] as String,
-      fileId: json['file_id'] as String,
-      file: SnCloudFile.fromJson(json['file'] as Map<String, dynamic>),
-      createdAt: DateTime.parse(json['created_at'] as String),
-      updatedAt: DateTime.parse(json['updated_at'] as String),
-      deletedAt: json['deleted_at'] == null
-          ? null
-          : DateTime.parse(json['deleted_at'] as String),
-    );
-
-Map<String, dynamic> _$SnCloudFileIndexToJson(_SnCloudFileIndex instance) =>
-    <String, dynamic>{
-      'id': instance.id,
-      'path': instance.path,
-      'file_id': instance.fileId,
-      'file': instance.file.toJson(),
       'created_at': instance.createdAt.toIso8601String(),
-      'updated_at': instance.updatedAt.toIso8601String(),
       'deleted_at': instance.deletedAt?.toIso8601String(),
     };
+
+_SnCloudFileReference _$SnCloudFileReferenceFromJson(
+  Map<String, dynamic> json,
+) => _SnCloudFileReference(
+  id: json['id'] as String,
+  name: json['name'] as String,
+  fileMeta: json['file_meta'] as Map<String, dynamic>? ?? const {},
+  userMeta: json['user_meta'] as Map<String, dynamic>? ?? const {},
+  sensitiveMarks:
+      (json['sensitive_marks'] as List<dynamic>?)
+          ?.map((e) => (e as num).toInt())
+          .toList() ??
+      const [],
+  mimeType: json['mime_type'] as String,
+  hash: json['hash'] as String,
+  size: (json['size'] as num).toInt(),
+  hasCompression: json['has_compression'] as bool,
+  storageUrl: json['url'] as String?,
+  width: (json['width'] as num?)?.toDouble(),
+  height: (json['height'] as num?)?.toDouble(),
+  blur: json['blurhash'] as String?,
+  usage: json['usage'] as String?,
+  applicationType: json['application_type'] as String?,
+);
+
+Map<String, dynamic> _$SnCloudFileReferenceToJson(
+  _SnCloudFileReference instance,
+) => <String, dynamic>{
+  'id': instance.id,
+  'name': instance.name,
+  'file_meta': instance.fileMeta,
+  'user_meta': instance.userMeta,
+  'sensitive_marks': instance.sensitiveMarks,
+  'mime_type': instance.mimeType,
+  'hash': instance.hash,
+  'size': instance.size,
+  'has_compression': instance.hasCompression,
+  'url': instance.storageUrl,
+  'width': instance.width,
+  'height': instance.height,
+  'blurhash': instance.blur,
+  'usage': instance.usage,
+  'application_type': instance.applicationType,
+};

@@ -19,11 +19,20 @@ part 'sticker_picker.g.dart';
 /// Fetch user-added sticker packs (with stickers) from API:
 /// GET /sphere/stickers/me
 @riverpod
-Future<List<SnStickerPack>> myStickerPacks(Ref ref) async {
+Future<List<SnStickerOwnership>> myStickerOwnerships(Ref ref) async {
   final client = ref.watch(solarNetworkClientProvider);
   final data = await client.stickers.getUserPacks();
   return data
-      .map((e) => SnStickerPack.fromJson(e as Map<String, dynamic>))
+      .map((e) => SnStickerOwnership.fromJson(e as Map<String, dynamic>))
+      .toList();
+}
+
+@riverpod
+Future<List<SnStickerPack>> myStickerPacks(Ref ref) async {
+  final ownerships = await ref.watch(myStickerOwnershipsProvider.future);
+  return ownerships
+      .map((ownership) => ownership.pack)
+      .whereType<SnStickerPack>()
       .toList();
 }
 
@@ -32,68 +41,86 @@ Future<List<SnStickerPack>> myStickerPacks(Ref ref) async {
 /// - Shows grid of stickers in selected pack
 /// - On tap, returns placeholder string :{prefix}+{slug}: via onPick callback
 class StickerPicker extends HookConsumerWidget {
-  final void Function(String placeholder) onPick;
+  final void Function(SnStickerPack pack, SnSticker sticker) onPick;
+  final void Function(SnStickerPack pack, SnSticker sticker)? onLongPress;
 
-  const StickerPicker({super.key, required this.onPick});
+  const StickerPicker({super.key, required this.onPick, this.onLongPress});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return PopupCard(
+      elevation: 8,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
+      child: Card(
+        margin: EdgeInsets.zero,
+        child: _StickerPickerView(
+          onPick: (pack, sticker) {
+            HapticFeedback.selectionClick();
+            onPick(pack, sticker);
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop();
+            }
+          },
+          onLongPress: onLongPress,
+        ),
+      ),
+    );
+  }
+}
+
+class _StickerPickerView extends HookConsumerWidget {
+  final void Function(SnStickerPack pack, SnSticker sticker) onPick;
+  final void Function(SnStickerPack pack, SnSticker sticker)? onLongPress;
+
+  const _StickerPickerView({required this.onPick, this.onLongPress});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final packsAsync = ref.watch(myStickerPacksProvider);
 
-    return PopupCard(
-      elevation: 8,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 520, maxHeight: 520),
-        child: packsAsync.when(
-          data: (packs) {
-            if (packs.isEmpty) {
-              return _EmptyState(
-                onRefresh: () async {
-                  ref.invalidate(myStickerPacksProvider);
-                },
-              );
-            }
-
-            // Maintain selected index locally with a ValueNotifier to avoid hooks dependency
-            return _PackSwitcher(
-              packs: packs,
-              onPick: (pack, sticker) {
-                final placeholder = ':${pack.prefix}+${sticker.slug}:';
-                HapticFeedback.selectionClick();
-                onPick(placeholder);
-                if (Navigator.of(context).canPop()) {
-                  Navigator.of(context).pop();
-                }
-              },
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 520, maxHeight: 520),
+      child: packsAsync.when(
+        data: (packs) {
+          if (packs.isEmpty) {
+            return _EmptyState(
               onRefresh: () async {
                 ref.invalidate(myStickerPacksProvider);
               },
             );
-          },
-          loading: () => const SizedBox(
-            width: 320,
-            height: 320,
-            child: Center(child: CircularProgressIndicator()),
-          ),
-          error: (err, _) => SizedBox(
-            width: 360,
-            height: 200,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Symbols.error, size: 28),
-                const Gap(8),
-                Text('Error: $err', textAlign: TextAlign.center),
-                const Gap(12),
-                FilledButton.icon(
-                  onPressed: () => ref.invalidate(myStickerPacksProvider),
-                  icon: const Icon(Symbols.refresh),
-                  label: Text('retry').tr(),
-                ),
-              ],
-            ).padding(all: 16),
-          ),
+          }
+
+          return _PackSwitcher(
+            packs: packs,
+            onPick: onPick,
+            onLongPress: onLongPress,
+            onRefresh: () async {
+              ref.invalidate(myStickerPacksProvider);
+            },
+          );
+        },
+        loading: () => const SizedBox(
+          width: 320,
+          height: 320,
+          child: Center(child: CircularProgressIndicator()),
+        ),
+        error: (err, _) => SizedBox(
+          width: 360,
+          height: 200,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Symbols.error, size: 28),
+              const Gap(8),
+              Text('Error: $err', textAlign: TextAlign.center),
+              const Gap(12),
+              FilledButton.icon(
+                onPressed: () => ref.invalidate(myStickerPacksProvider),
+                icon: const Icon(Symbols.refresh),
+                label: Text('retry').tr(),
+              ),
+            ],
+          ).padding(all: 16),
         ),
       ),
     );
@@ -102,6 +129,7 @@ class StickerPicker extends HookConsumerWidget {
 
 class _EmptyState extends StatelessWidget {
   final Future<void> Function() onRefresh;
+
   const _EmptyState({required this.onRefresh});
 
   @override
@@ -130,11 +158,13 @@ class _EmptyState extends StatelessWidget {
 class _PackSwitcher extends StatefulWidget {
   final List<SnStickerPack> packs;
   final void Function(SnStickerPack pack, SnSticker sticker) onPick;
+  final void Function(SnStickerPack pack, SnSticker sticker)? onLongPress;
   final Future<void> Function() onRefresh;
 
   const _PackSwitcher({
     required this.packs,
     required this.onPick,
+    this.onLongPress,
     required this.onRefresh,
   });
 
@@ -144,6 +174,29 @@ class _PackSwitcher extends StatefulWidget {
 
 class _PackSwitcherState extends State<_PackSwitcher> {
   int _index = 0;
+
+  String _packLabel(String name) =>
+      name.length <= 8 ? name : '${name.substring(0, 8)}…';
+
+  Widget _packAvatar(SnStickerPack pack) {
+    final image =
+        pack.icon ??
+        (pack.stickers.isNotEmpty ? pack.stickers.first.image : null);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(999),
+      child: SizedBox(
+        width: 18,
+        height: 18,
+        child: image != null
+            ? CloudImageWidget(file: image, fit: BoxFit.cover, noBlurhash: true)
+            : Icon(
+                Symbols.sticky_note_2,
+                size: 14,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -188,8 +241,10 @@ class _PackSwitcherState extends State<_PackSwitcher> {
               return Tooltip(
                 message: packs[i].name,
                 child: FilterChip(
-                  label: Text(packs[i].name, overflow: TextOverflow.ellipsis),
+                  avatar: _packAvatar(packs[i]),
+                  label: Text(_packLabel(packs[i].name)),
                   selected: selected,
+                  showCheckmark: false,
                   onSelected: (_) {
                     setState(() => _index = i);
                     HapticFeedback.selectionClick();
@@ -208,6 +263,9 @@ class _PackSwitcherState extends State<_PackSwitcher> {
             child: _StickersGrid(
               pack: selectedPack,
               onPick: (sticker) => widget.onPick(selectedPack, sticker),
+              onLongPress: widget.onLongPress == null
+                  ? null
+                  : (sticker) => widget.onLongPress!(selectedPack, sticker),
             ),
           ),
         ),
@@ -219,8 +277,15 @@ class _PackSwitcherState extends State<_PackSwitcher> {
 class _StickersGrid extends StatelessWidget {
   final SnStickerPack pack;
   final void Function(SnSticker sticker) onPick;
+  final void Function(SnSticker sticker)? onLongPress;
+  final double maxCrossAxisExtent;
 
-  const _StickersGrid({required this.pack, required this.onPick});
+  const _StickersGrid({
+    required this.pack,
+    required this.onPick,
+    this.onLongPress,
+    this.maxCrossAxisExtent = 56,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -233,8 +298,8 @@ class _StickersGrid extends StatelessWidget {
     return GridView.builder(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 56,
+      gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent: maxCrossAxisExtent,
         mainAxisSpacing: 8,
         crossAxisSpacing: 8,
       ),
@@ -242,11 +307,17 @@ class _StickersGrid extends StatelessWidget {
       itemBuilder: (context, index) {
         final sticker = stickers[index];
         final placeholder = ':${pack.prefix}+${sticker.slug}:';
+        final isEmote = sticker.mode == 1;
         return Tooltip(
-          message: placeholder,
-          child: InkWell(
-            borderRadius: const BorderRadius.all(Radius.circular(8)),
+          message: sticker.name?.trim().isNotEmpty == true
+              ? '${sticker.name} ($placeholder)'
+              : placeholder,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
             onTap: () => onPick(sticker),
+            onLongPress: onLongPress == null
+                ? null
+                : () => onLongPress!(sticker),
             child: ClipRRect(
               borderRadius: const BorderRadius.all(Radius.circular(8)),
               child: DecoratedBox(
@@ -256,10 +327,36 @@ class _StickersGrid extends StatelessWidget {
                 ),
                 child: AspectRatio(
                   aspectRatio: 1,
-                  child: CloudImageWidget(
-                    file: sticker.image,
-                    fit: BoxFit.contain,
-                    noBlurhash: true,
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: CloudImageWidget(
+                          file: sticker.image,
+                          fit: BoxFit.contain,
+                          noBlurhash: true,
+                        ),
+                      ),
+                      Positioned(
+                        top: 4,
+                        right: 4,
+                        child: Container(
+                          padding: const EdgeInsets.all(3),
+                          decoration: BoxDecoration(
+                            color:
+                                (isEmote
+                                        ? Theme.of(context).colorScheme.tertiary
+                                        : Theme.of(context).colorScheme.primary)
+                                    .withOpacity(0.9),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Icon(
+                            isEmote ? Symbols.mood : Symbols.sticky_note_2,
+                            size: 8,
+                            color: Theme.of(context).colorScheme.onPrimary,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -275,9 +372,15 @@ class _StickersGrid extends StatelessWidget {
 /// No background card, no title header, suitable for embedding in other UI
 class StickerPickerEmbedded extends HookConsumerWidget {
   final double? height;
-  final void Function(String placeholder) onPick;
+  final void Function(SnStickerPack pack, SnSticker sticker) onPick;
+  final void Function(SnStickerPack pack, SnSticker sticker)? onLongPress;
 
-  const StickerPickerEmbedded({super.key, required this.onPick, this.height});
+  const StickerPickerEmbedded({
+    super.key,
+    required this.onPick,
+    this.onLongPress,
+    this.height,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -296,10 +399,10 @@ class StickerPickerEmbedded extends HookConsumerWidget {
         return _EmbeddedPackSwitcher(
           packs: packs,
           onPick: (pack, sticker) {
-            final placeholder = ':${pack.prefix}+${sticker.slug}:';
             HapticFeedback.selectionClick();
-            onPick(placeholder);
+            onPick(pack, sticker);
           },
+          onLongPress: onLongPress,
           onRefresh: () async {
             ref.invalidate(myStickerPacksProvider);
           },
@@ -335,11 +438,13 @@ class StickerPickerEmbedded extends HookConsumerWidget {
 class _EmbeddedPackSwitcher extends StatefulWidget {
   final List<SnStickerPack> packs;
   final void Function(SnStickerPack pack, SnSticker sticker) onPick;
+  final void Function(SnStickerPack pack, SnSticker sticker)? onLongPress;
   final Future<void> Function() onRefresh;
 
   const _EmbeddedPackSwitcher({
     required this.packs,
     required this.onPick,
+    this.onLongPress,
     required this.onRefresh,
   });
 
@@ -349,6 +454,29 @@ class _EmbeddedPackSwitcher extends StatefulWidget {
 
 class _EmbeddedPackSwitcherState extends State<_EmbeddedPackSwitcher> {
   int _index = 0;
+
+  String _packLabel(String name) =>
+      name.length <= 8 ? name : '${name.substring(0, 8)}…';
+
+  Widget _packAvatar(SnStickerPack pack) {
+    final image =
+        pack.icon ??
+        (pack.stickers.isNotEmpty ? pack.stickers.first.image : null);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(999),
+      child: SizedBox(
+        width: 18,
+        height: 18,
+        child: image != null
+            ? CloudImageWidget(file: image, fit: BoxFit.cover, noBlurhash: true)
+            : Icon(
+                Symbols.sticky_note_2,
+                size: 14,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -360,66 +488,32 @@ class _EmbeddedPackSwitcherState extends State<_EmbeddedPackSwitcher> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Gap(12),
-        // Vertical, scrollable packs rail like common emoji pickers
-        Card(
-          margin: EdgeInsets.zero,
-          child: SizedBox(
-            height: 36,
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              scrollDirection: Axis.horizontal,
-              itemCount: packs.length,
-              separatorBuilder: (_, _) => const Gap(4),
-              itemBuilder: (context, i) {
-                final selected = _index == i;
-                return Tooltip(
-                  message: packs[i].name,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    curve: Curves.easeInOut,
-                    decoration: BoxDecoration(
-                      color: selected
-                          ? Theme.of(context).colorScheme.primaryContainer
-                          : Theme.of(context).colorScheme.surfaceContainer,
-                      borderRadius: const BorderRadius.all(Radius.circular(8)),
-                      border: selected
-                          ? Border.all(
-                              color: Theme.of(context).colorScheme.primary,
-                              width: 4,
-                            )
-                          : null,
-                    ),
-                    margin: const EdgeInsets.only(right: 8),
-                    child: InkWell(
-                      borderRadius: const BorderRadius.all(Radius.circular(8)),
-                      onTap: () {
-                        setState(() => _index = i);
-                        HapticFeedback.selectionClick();
-                      },
-                      child: TweenAnimationBuilder<double>(
-                        tween: Tween<double>(end: selected ? 4 : 8),
-                        duration: const Duration(milliseconds: 200),
-                        curve: Curves.easeInOut,
-                        builder: (context, value, _) {
-                          return packs[i].icon != null
-                              ? CloudImageWidget(
-                                  file: packs[i].icon!,
-                                  noBlurhash: true,
-                                ).clipRRect(all: value)
-                              : CloudImageWidget(
-                                  file: packs[i].stickers.firstOrNull?.image,
-                                  noBlurhash: true,
-                                ).clipRRect(all: value);
-                        },
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ).padding(vertical: 4),
-        ).padding(horizontal: 12),
+        const Gap(8),
+        SizedBox(
+          height: 40,
+          child: ListView.separated(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            scrollDirection: Axis.horizontal,
+            itemCount: packs.length,
+            separatorBuilder: (_, _) => const Gap(4),
+            itemBuilder: (context, i) {
+              final selected = _index == i;
+              return Tooltip(
+                message: packs[i].name,
+                child: FilterChip(
+                  avatar: _packAvatar(packs[i]),
+                  label: Text(_packLabel(packs[i].name)),
+                  selected: selected,
+                  showCheckmark: false,
+                  onSelected: (_) {
+                    setState(() => _index = i);
+                    HapticFeedback.selectionClick();
+                  },
+                ),
+              );
+            },
+          ),
+        ),
 
         // Content
         Expanded(
@@ -428,7 +522,11 @@ class _EmbeddedPackSwitcherState extends State<_EmbeddedPackSwitcher> {
             child: _StickersGrid(
               pack: selectedPack,
               onPick: (sticker) => widget.onPick(selectedPack, sticker),
-            ).padding(horizontal: 2),
+              onLongPress: widget.onLongPress == null
+                  ? null
+                  : (sticker) => widget.onLongPress!(selectedPack, sticker),
+              maxCrossAxisExtent: 96,
+            ).padding(horizontal: 2, top: 4),
           ),
         ),
       ],
@@ -443,7 +541,8 @@ Future<void> showStickerPickerPopover(
   BuildContext context,
   Offset offset, {
   Alignment? alignment,
-  required void Function(String placeholder) onPick,
+  required void Function(SnStickerPack pack, SnSticker sticker) onPick,
+  void Function(SnStickerPack pack, SnSticker sticker)? onLongPress,
 }) async {
   // Use flutter_popup_card to present the anchored popup near trigger.
   await showPopupCard<void>(
@@ -451,15 +550,14 @@ Future<void> showStickerPickerPopover(
     offset: offset,
     alignment: alignment ?? Alignment.topLeft,
     dimBackground: true,
-    builder: (ctx) => SizedBox(
-      width: math.min(480, MediaQuery.of(context).size.width * 0.9),
-      height: 480,
-      child: ProviderScope(
-        child: StickerPicker(
-          onPick: (ph) {
-            onPick(ph);
-            Navigator.of(ctx).maybePop();
-          },
+    builder: (ctx) => PopupCard(
+      elevation: 8,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
+      child: SizedBox(
+        width: math.min(480, MediaQuery.of(context).size.width * 0.9),
+        height: 480,
+        child: ProviderScope(
+          child: _StickerPickerView(onPick: onPick, onLongPress: onLongPress),
         ),
       ),
     ),

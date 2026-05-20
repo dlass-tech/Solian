@@ -15,6 +15,7 @@ import 'package:island/shared/widgets/confuse_spinner.dart';
 import 'package:island/chat/widgets/call_button.dart';
 import 'package:island/chat/widgets/call_overlay.dart';
 import 'package:island/chat/widgets/chat_input.dart';
+import 'package:island/chat/widgets/chat_room_list_tile.dart';
 import 'package:island/chat/widgets/chat_search_screen.dart';
 import 'package:island/chat/widgets/public_room_preview.dart';
 import 'package:island/chat/widgets/room_app_bar.dart';
@@ -24,14 +25,17 @@ import 'package:island/chat/messages_notifier.dart';
 import 'package:island/core/config.dart';
 import 'package:island/core/lifecycle.dart';
 import 'package:island/core/network.dart';
+import 'package:island/core/services/event_bus.dart';
 import 'package:island/core/websocket.dart';
 import 'package:island/core/services/analytics_service.dart';
+import 'package:island/data/message.dart';
 import 'package:island/drive/drive_service.dart';
 import 'package:island/route.gr.dart';
 
 import 'package:island/shared/widgets/alert.dart';
 import 'package:island/shared/widgets/app_scaffold.dart' hide PageBackButton;
 import 'package:island/shared/widgets/attachment_uploader.dart';
+import 'package:island/shared/widgets/layouts/sheet_scaffold.dart';
 import 'package:island/shared/widgets/response.dart';
 import 'package:island/shared/widgets/sync_indicator.dart';
 import 'package:island/thoughts/screens/think_sheet.dart';
@@ -41,7 +45,7 @@ import 'package:solar_network_sdk/solar_network_sdk.dart';
 @RoutePage()
 class ChatRoomScreen extends HookConsumerWidget {
   final String id;
-  const ChatRoomScreen({super.key, required this.id});
+  const ChatRoomScreen({super.key, @PathParam("id") required this.id});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -176,7 +180,7 @@ class ChatRoomScreen extends HookConsumerWidget {
     final lastBackgroundTime = useRef<DateTime?>(null);
     const backgroundSyncThreshold = Duration(seconds: 30);
 
-    final lastResyncAt = useRef<DateTime?>(DateTime.now());
+    final lastResyncAt = useRef<DateTime?>(null);
     final isResyncing = useRef(false);
 
     Future<void> resyncRoom({
@@ -198,6 +202,14 @@ class ChatRoomScreen extends HookConsumerWidget {
         isResyncing.value = false;
       }
     }
+
+    useEffect(() {
+      Future.microtask(() {
+        if (!context.mounted) return;
+        resyncRoom(force: true, reason: 'room-open');
+      });
+      return null;
+    }, [id]);
 
     useEffect(() {
       Future.microtask(() {
@@ -331,26 +343,19 @@ class ChatRoomScreen extends HookConsumerWidget {
 
     // Track new messages while scrolled up
     final newMessagesCount = useState<int>(0);
-    final lastMessageCount = useRef<int>(0);
     final isBackToBottomVisible = useState<bool>(false);
     final hideBackToBottomTimer = useRef<Timer?>(null);
 
-    // Watch loading state from messages notifier
-    final isLoadingMore = messagesNotifier.isLoadingMore;
-
-    // Update new message count when messages change (but not during loadMore)
+    // Count only actual incoming/synced new-message events. Older pagination
+    // loads and list regrouping can change message count without being new.
     useEffect(() {
-      final currentCount = messages.value?.length ?? 0;
-      if (!isAtLatestMessages.value &&
-          currentCount > lastMessageCount.value &&
-          lastMessageCount.value > 0 &&
-          !isLoadingMore) {
-        // Only count as "new" if not from loadMore
-        newMessagesCount.value += (currentCount - lastMessageCount.value);
-      }
-      lastMessageCount.value = currentCount;
-      return null;
-    }, [messages.value?.length, isAtLatestMessages.value, isLoadingMore]);
+      final sub = eventBus.on<ChatMessageNewEvent>().listen((event) {
+        if (event.message.chatRoomId != id) return;
+        if (isAtLatestMessages.value) return;
+        newMessagesCount.value += 1;
+      });
+      return sub.cancel;
+    }, [id]);
 
     // Auto-hide back-to-bottom button after idle period.
     useEffect(() {
@@ -419,6 +424,130 @@ class ChatRoomScreen extends HookConsumerWidget {
       chatStateNotifier.exitSelectionMode();
     }, [chatState.selectedMessageIds, messages, chatStateNotifier]);
 
+    final openRedirectSheet = useCallback(
+      () async {
+        if (chatState.selectedMessageIds.isEmpty) return;
+
+        final allMessages = messages.value ?? const <LocalChatMessage>[];
+        final selectedMessages =
+            allMessages
+                .where((msg) => chatState.selectedMessageIds.contains(msg.id))
+                .toList()
+              ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+
+        // Safety: ensure selected ids are from current source room only.
+        final crossRoomSelected = selectedMessages
+            .where((msg) => msg.roomId != id)
+            .toList();
+        if (crossRoomSelected.isNotEmpty) {
+          showErrorAlert('chatRedirectSameRoomOnly'.tr());
+          return;
+        }
+
+        if (selectedMessages.isEmpty) return;
+        if (selectedMessages.length > 100) {
+          showErrorAlert('chatRedirectTooMany'.tr());
+          return;
+        }
+        if (selectedMessages.any((msg) => msg.type != 'text')) {
+          showErrorAlert('chatRedirectTextOnly'.tr());
+          return;
+        }
+
+        if (!context.mounted) return;
+
+        final destinationRoomId = await showModalBottomSheet<String>(
+          context: context,
+          isScrollControlled: true,
+          builder: (_) => _RedirectRoomSelectorSheet(currentRoomId: id),
+        );
+
+        if (destinationRoomId == null || !context.mounted) return;
+
+        final rooms = ref
+            .read(chatRoomJoinedProvider)
+            .maybeWhen(data: (items) => items, orElse: () => <SnChatRoom>[]);
+        SnChatRoom? destinationRoom;
+        for (final room in rooms) {
+          if (room.id == destinationRoomId) {
+            destinationRoom = room;
+            break;
+          }
+        }
+        if (destinationRoom == null) {
+          final loadedRooms = await ref.read(chatRoomJoinedProvider.future);
+          for (final room in loadedRooms) {
+            if (room.id == destinationRoomId) {
+              destinationRoom = room;
+              break;
+            }
+          }
+        }
+        final destinationName = destinationRoom?.name?.trim().isNotEmpty == true
+            ? destinationRoom!.name!
+            : 'this room';
+
+        if (!context.mounted) return;
+
+        final shouldProceed =
+            await showDialog<bool>(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                title: Text('chatRedirectConfirmTitle'.tr()),
+                content: Text(
+                  'chatRedirectConfirmBody'.tr(
+                    args: [selectedMessages.length.toString(), destinationName],
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(false),
+                    child: Text('cancel'.tr()),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.of(ctx).pop(true),
+                    child: Text('redirect'.tr()),
+                  ),
+                ],
+              ),
+            ) ??
+            false;
+
+        if (!shouldProceed || !context.mounted) return;
+
+        try {
+          showLoadingModal(context);
+          final client = ref.read(solarNetworkClientProvider);
+          await client.chat.redirectMessages(
+            roomId: destinationRoomId,
+            messageIds: selectedMessages.map((m) => m.id).toList(),
+          );
+
+          if (!context.mounted) return;
+          chatStateNotifier.exitSelectionMode();
+          showSnackBar(
+            'chatRedirectSuccess'.tr(
+              args: [selectedMessages.length.toString()],
+            ),
+          );
+        } catch (err) {
+          showErrorAlert(err);
+        } finally {
+          if (context.mounted) {
+            hideLoadingModal(context);
+          }
+        }
+      },
+      [
+        chatState.selectedMessageIds,
+        messages,
+        ref,
+        context,
+        id,
+        chatStateNotifier,
+      ],
+    );
+
     final uploadAttachment = useCallback((
       int index, {
       String? encryptKey,
@@ -438,8 +567,9 @@ class ChatRoomScreen extends HookConsumerWidget {
       );
       if (config == null) return;
 
+      var trackedIndex = index;
       try {
-        chatStateNotifier.updateAttachmentProgress('chat-upload', 0);
+        chatStateNotifier.updateAttachmentUploadProgress(trackedIndex, 0);
 
         final cloudFile = await ref
             .read(driveFileUploaderProvider)
@@ -447,12 +577,22 @@ class ChatRoomScreen extends HookConsumerWidget {
               fileData: attachment,
               poolId: config.poolId,
               encryptPassword: encryptKey,
+              usage: 'chat_message',
               mode: attachment.type == UniversalFileType.file
                   ? FileUploadMode.generic
                   : FileUploadMode.mediaSafe,
               onProgress: (progress, _) {
-                chatStateNotifier.updateAttachmentProgress(
-                  'chat-upload',
+                final latestAttachments = ref
+                    .read(chatRoomStateProvider(id))
+                    .attachments;
+                final currentIndex = latestAttachments.indexOf(attachment);
+                if (currentIndex == -1) return;
+                if (currentIndex != trackedIndex) {
+                  chatStateNotifier.clearAttachmentUploadProgress(trackedIndex);
+                  trackedIndex = currentIndex;
+                }
+                chatStateNotifier.updateAttachmentUploadProgress(
+                  currentIndex,
                   progress ?? 0.0,
                 );
               },
@@ -463,16 +603,22 @@ class ChatRoomScreen extends HookConsumerWidget {
           throw ArgumentError('Failed to upload file...');
         }
 
-        final clone = List.of(chatState.attachments);
-        clone[index] = UniversalFile(data: cloudFile, type: attachment.type);
+        final latestAttachments = ref
+            .read(chatRoomStateProvider(id))
+            .attachments;
+        final currentIndex = latestAttachments.indexOf(attachment);
+        if (currentIndex == -1) return;
+
+        final clone = List<UniversalFile>.of(latestAttachments);
+        clone[currentIndex] = UniversalFile(
+          data: cloudFile,
+          type: attachment.type,
+        );
         chatStateNotifier.updateAttachments(clone);
       } catch (err) {
         showErrorAlert(err.toString());
       } finally {
-        final newProgress = Map<String, Map<int, double?>>.from(
-          chatState.attachmentProgress,
-        );
-        newProgress.remove('chat-upload');
+        chatStateNotifier.clearAttachmentUploadProgress(trackedIndex);
       }
     }, [chatState.attachments, chatStateNotifier, ref, context]);
 
@@ -493,9 +639,6 @@ class ChatRoomScreen extends HookConsumerWidget {
     final jumpAndRevealMessage = useCallback((String messageId) {
       messagesNotifier.jumpToMessage(messageId).then((index) {
         if (index != -1 && context.mounted) {
-          ref
-              .read(flashingMessagesProvider.notifier)
-              .update((set) => set.union({messageId}));
           messages.when(
             data: (messageList) {
               chatStateNotifier.scrollToMessage(
@@ -509,7 +652,7 @@ class ChatRoomScreen extends HookConsumerWidget {
           );
         }
       });
-    }, [messagesNotifier, ref, messages, chatStateNotifier, context]);
+    }, [messagesNotifier, messages, chatStateNotifier, context]);
 
     final filteredMessages = messages;
 
@@ -562,10 +705,8 @@ class ChatRoomScreen extends HookConsumerWidget {
             leading: const AutoLeadingButton(),
             automaticallyImplyLeading: false,
             title: chatRoom.when(
-              data: (room) => RoomAppBar(
-                room: room!,
-                onlineCount: onlineCount.value?.onlineCount ?? 0,
-              ),
+              data: (room) =>
+                  RoomAppBar(room: room!, onlineStatus: onlineCount.value),
               loading: () => const Text('Loading...'),
               error: (err, _) => ResponseErrorWidget(
                 error: err,
@@ -835,6 +976,8 @@ class ChatRoomScreen extends HookConsumerWidget {
                               chatStateNotifier.setForwardingTo(null);
                               chatStateNotifier.setPoll(null);
                               chatStateNotifier.setFund(null);
+                              chatStateNotifier.setLocation();
+                              chatStateNotifier.setMeet(null);
                             },
                             messageEditingTo: chatState.messageEditingTo,
                             messageReplyingTo: chatState.messageReplyingTo,
@@ -845,6 +988,24 @@ class ChatRoomScreen extends HookConsumerWidget {
                             selectedFund: chatState.selectedFund,
                             onFundSelected: (fund) =>
                                 chatStateNotifier.setFund(fund),
+                            selectedLocationName:
+                                chatState.selectedLocationName,
+                            selectedLocationAddress:
+                                chatState.selectedLocationAddress,
+                            selectedLocationWkt: chatState.selectedLocationWkt,
+                            selectedMeetId: chatState.selectedMeetId,
+                            onLocationSelected:
+                                ({
+                                  String? name,
+                                  String? address,
+                                  String? wkt,
+                                }) => chatStateNotifier.setLocation(
+                                  name: name,
+                                  address: address,
+                                  wkt: wkt,
+                                ),
+                            onMeetSelected: (meetId) =>
+                                chatStateNotifier.setMeet(meetId),
                             isMessageListScrolling: !isAtLatestMessages.value,
                             onPickFile: (isPhoto) {
                               if (isPhoto) {
@@ -864,7 +1025,7 @@ class ChatRoomScreen extends HookConsumerWidget {
                               if (attachment.isOnCloud && !attachment.isLink) {
                                 final client = ref.watch(apiClientProvider);
                                 await client.delete(
-                                  '/drive/files/${attachment.data.id}',
+                                  '/fs/files/${attachment.data.id}',
                                 );
                               }
                               final clone = List.of(chatState.attachments);
@@ -895,11 +1056,136 @@ class ChatRoomScreen extends HookConsumerWidget {
                   selectedCount: chatState.selectedMessageIds.length,
                   onClose: chatStateNotifier.exitSelectionMode,
                   onAIThink: openThinkingSheet,
+                  onRedirect: openRedirectSheet,
                 ),
             ],
           ),
         ),
         const ChatSyncIndicator(height: 56),
+      ],
+    );
+  }
+}
+
+class _RedirectRoomSelectorSheet extends HookConsumerWidget {
+  final String currentRoomId;
+
+  const _RedirectRoomSelectorSheet({required this.currentRoomId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final roomsAsync = ref.watch(chatRoomJoinedProvider);
+
+    return SheetScaffold(
+      titleText: 'chatRedirectSelectRoom'.tr(),
+      child: roomsAsync.when(
+        data: (rooms) {
+          final communityRooms = <SnChatRoom>[];
+          final directRooms = <SnChatRoom>[];
+
+          for (final room in rooms) {
+            if (room.encryptionMode != 0) continue;
+            if (room.type == 1) {
+              directRooms.add(room);
+            } else {
+              communityRooms.add(room);
+            }
+          }
+
+          int byName(SnChatRoom a, SnChatRoom b) {
+            final aName = (a.name ?? '').toLowerCase();
+            final bName = (b.name ?? '').toLowerCase();
+            return aName.compareTo(bName);
+          }
+
+          communityRooms.sort(byName);
+          directRooms.sort(byName);
+
+          final hasAny = communityRooms.isNotEmpty || directRooms.isNotEmpty;
+          if (!hasAny) {
+            return Center(
+              child: Text(
+                'noChatRoomsAvailable'.tr(),
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            );
+          }
+
+          return ListView(
+            children: [
+              if (communityRooms.isNotEmpty)
+                _RedirectRoomGroup(
+                  title: 'chatTabGroup'.tr(),
+                  rooms: communityRooms,
+                  currentRoomId: currentRoomId,
+                ),
+              if (directRooms.isNotEmpty)
+                _RedirectRoomGroup(
+                  title: 'chatTabDirect'.tr(),
+                  rooms: directRooms,
+                  currentRoomId: currentRoomId,
+                ),
+            ],
+          );
+        },
+        loading: () => Center(
+          child: ConfuseSpinner(
+            size: 34,
+            speed: 6,
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurfaceVariant.withOpacity(0.65),
+          ),
+        ),
+        error: (error, _) => ResponseErrorWidget(
+          error: error,
+          onRetry: () => ref.invalidate(chatRoomJoinedProvider),
+        ),
+      ),
+    );
+  }
+}
+
+class _RedirectRoomGroup extends StatelessWidget {
+  final String title;
+  final List<SnChatRoom> rooms;
+  final String currentRoomId;
+
+  const _RedirectRoomGroup({
+    required this.title,
+    required this.rooms,
+    required this.currentRoomId,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+          child: Text(
+            title,
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+        for (final room in rooms)
+          ChatRoomListTile(
+            room: room,
+            isDirect: room.type == 1,
+            selected: room.id == currentRoomId,
+            subtitle: room.id == currentRoomId
+                ? Text(
+                    'Current room',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontStyle: FontStyle.italic,
+                    ),
+                  )
+                : null,
+            onTap: () => Navigator.of(context).pop(room.id),
+          ),
       ],
     );
   }

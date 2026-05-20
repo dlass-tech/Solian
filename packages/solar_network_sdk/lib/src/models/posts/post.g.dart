@@ -67,7 +67,7 @@ _SnPost _$SnPostFromJson(Map<String, dynamic> json) => _SnPost(
   contentType: (json['content_type'] as num?)?.toInt() ?? 0,
   attachments:
       (json['attachments'] as List<dynamic>?)
-          ?.map((e) => SnCloudFile.fromJson(e as Map<String, dynamic>))
+          ?.map((e) => SnCloudFileReference.fromJson(e as Map<String, dynamic>))
           .toList() ??
       const [],
   reactionsCount:
@@ -92,6 +92,11 @@ _SnPost _$SnPostFromJson(Map<String, dynamic> json) => _SnPost(
           .toList() ??
       const [],
   collections: json['collections'] as List<dynamic>? ?? const [],
+  publisherCollections:
+      (json['publisher_collections'] as List<dynamic>?)
+          ?.map((e) => SnPostCollection.fromJson(e as Map<String, dynamic>))
+          .toList() ??
+      const [],
   featuredRecords:
       (json['featured_records'] as List<dynamic>?)
           ?.map((e) => SnPostFeaturedRecord.fromJson(e as Map<String, dynamic>))
@@ -115,6 +120,7 @@ _SnPost _$SnPostFromJson(Map<String, dynamic> json) => _SnPost(
   boostedAt: json['boosted_at'] == null
       ? null
       : DateTime.parse(json['boosted_at'] as String),
+  isBookmarked: json['is_bookmarked'] as bool? ?? false,
 );
 
 Map<String, dynamic> _$SnPostToJson(_SnPost instance) => <String, dynamic>{
@@ -163,6 +169,9 @@ Map<String, dynamic> _$SnPostToJson(_SnPost instance) => <String, dynamic>{
   'tags': instance.tags.map((e) => e.toJson()).toList(),
   'categories': instance.categories.map((e) => e.toJson()).toList(),
   'collections': instance.collections,
+  'publisher_collections': instance.publisherCollections
+      .map((e) => e.toJson())
+      .toList(),
   'featured_records': instance.featuredRecords.map((e) => e.toJson()).toList(),
   'created_at': instance.createdAt?.toIso8601String(),
   'updated_at': instance.updatedAt?.toIso8601String(),
@@ -172,6 +181,7 @@ Map<String, dynamic> _$SnPostToJson(_SnPost instance) => <String, dynamic>{
   'is_truncated': instance.isTruncated,
   'boosted_by': instance.boostedBy?.toJson(),
   'boosted_at': instance.boostedAt?.toIso8601String(),
+  'is_bookmarked': instance.isBookmarked,
 };
 
 _SnPublisherStats _$SnPublisherStatsFromJson(Map<String, dynamic> json) =>
@@ -276,6 +286,8 @@ _SnPostReaction _$SnPostReactionFromJson(Map<String, dynamic> json) =>
       account: json['account'] == null
           ? null
           : SnAccount.fromJson(json['account'] as Map<String, dynamic>),
+      isLocal: json['is_local'] as bool?,
+      fediverseUri: json['fediverse_uri'] as String?,
       deletedAt: json['deleted_at'] == null
           ? null
           : DateTime.parse(json['deleted_at'] as String),
@@ -293,8 +305,46 @@ Map<String, dynamic> _$SnPostReactionToJson(_SnPostReaction instance) =>
       'actor': instance.actor?.toJson(),
       'account_id': instance.accountId,
       'account': instance.account?.toJson(),
+      'is_local': instance.isLocal,
+      'fediverse_uri': instance.fediverseUri,
       'deleted_at': instance.deletedAt?.toIso8601String(),
     };
+
+_SnPostBookmark _$SnPostBookmarkFromJson(Map<String, dynamic> json) =>
+    _SnPostBookmark(
+      id: json['id'] as String,
+      postId: json['post_id'] as String,
+      accountId: json['account_id'] as String,
+      createdAt: json['created_at'] == null
+          ? null
+          : DateTime.parse(json['created_at'] as String),
+      updatedAt: json['updated_at'] == null
+          ? null
+          : DateTime.parse(json['updated_at'] as String),
+    );
+
+Map<String, dynamic> _$SnPostBookmarkToJson(_SnPostBookmark instance) =>
+    <String, dynamic>{
+      'id': instance.id,
+      'post_id': instance.postId,
+      'account_id': instance.accountId,
+      'created_at': instance.createdAt?.toIso8601String(),
+      'updated_at': instance.updatedAt?.toIso8601String(),
+    };
+
+_UserReactionListingItem _$UserReactionListingItemFromJson(
+  Map<String, dynamic> json,
+) => _UserReactionListingItem(
+  reaction: SnPostReaction.fromJson(json['reaction'] as Map<String, dynamic>),
+  post: SnPost.fromJson(json['post'] as Map<String, dynamic>),
+);
+
+Map<String, dynamic> _$UserReactionListingItemToJson(
+  _UserReactionListingItem instance,
+) => <String, dynamic>{
+  'reaction': instance.reaction.toJson(),
+  'post': instance.post.toJson(),
+};
 
 _SnPostFeaturedRecord _$SnPostFeaturedRecordFromJson(
   Map<String, dynamic> json,

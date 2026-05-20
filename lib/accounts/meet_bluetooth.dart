@@ -9,8 +9,8 @@ import 'package:logging/logging.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 const kMeetBluetoothServiceUuid = 'FFF0';
-const kDynamicManufacturerId = 0xFFFF;
-const kDynamicManufacturerMarkerHex = '534F4C';
+const kSolianManufacturerId = 0xFFFF;
+const kSolianManufacturerMarkerHex = '534F4C';
 
 final meetBluetoothServiceProvider = Provider<MeetBluetoothService>((ref) {
   return MeetBluetoothService();
@@ -340,10 +340,10 @@ class MeetBluetoothService {
         );
       }
       if (result.advertisementData.manufacturerData.containsKey(
-        kDynamicManufacturerId,
+        kSolianManufacturerId,
       )) {
         matchingManufacturerRows.add(
-          '${result.device.remoteId.str}@${result.rssi}:${_bytesToHex(result.advertisementData.manufacturerData[kDynamicManufacturerId]!).toUpperCase()}',
+          '${result.device.remoteId.str}@${result.rssi}:${_bytesToHex(result.advertisementData.manufacturerData[kSolianManufacturerId]!).toUpperCase()}',
         );
       }
       if (advertisedServiceData.isNotEmpty) {
@@ -439,7 +439,7 @@ class MeetBluetoothService {
 
     if (state == ble.BluetoothLowEnergyState.unauthorized) {
       throw StateError(
-        'Bluetooth permission is blocked. Please allow Dynamic to use Bluetooth.',
+        'Bluetooth permission is blocked. Please allow Solian to use Bluetooth.',
       );
     }
 
@@ -483,7 +483,7 @@ class MeetBluetoothService {
 
       if (status.isPermanentlyDenied || status.isRestricted) {
         throw StateError(
-          'Bluetooth permission is blocked on iPhone. Please allow Dynamic in Settings > Privacy & Security > Bluetooth.',
+          'Bluetooth permission is blocked on iPhone. Please allow Solian in Settings > Privacy & Security > Bluetooth.',
         );
       }
 
@@ -525,7 +525,7 @@ class MeetBluetoothService {
 
     if (state == BluetoothAdapterState.unauthorized) {
       throw StateError(
-        'Bluetooth permission is blocked. Please allow Dynamic in System Settings > Privacy & Security > Bluetooth.',
+        'Bluetooth permission is blocked. Please allow Solian in System Settings > Privacy & Security > Bluetooth.',
       );
     }
 

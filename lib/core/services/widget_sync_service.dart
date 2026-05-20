@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 class WidgetSyncService {
-  static const _channel = MethodChannel('com.zhaishis.dyci/widget');
+  static const _channel = MethodChannel('dev.solsynth.solian/widget');
   static final _instance = WidgetSyncService._internal();
 
   factory WidgetSyncService() => _instance;

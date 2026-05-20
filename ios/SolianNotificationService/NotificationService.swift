@@ -51,6 +51,8 @@ class NotificationService: UNNotificationServiceExtension {
     }
     
     private func processNotification(request: UNNotificationRequest, content: UNMutableNotificationContent) throws {
+        applyGrouping(to: content)
+        
         switch content.userInfo["type"] as? String {
         case "messages.new":
             content.sound = UNNotificationSound(named: UNNotificationSoundName("SfxMessage.caf"))
@@ -58,6 +60,20 @@ class NotificationService: UNNotificationServiceExtension {
         default:
             content.sound = UNNotificationSound(named: UNNotificationSoundName("SfxNotification.caf"))
             try handleDefaultNotification(content: content)
+        }
+    }
+    
+    private func applyGrouping(to content: UNMutableNotificationContent) {
+        guard let meta = content.userInfo["meta"] as? [AnyHashable: Any] else { return }
+        
+        if let roomId = meta["room_id"] {
+            content.threadIdentifier = "room_\(roomId)"
+        } else if let userId = meta["user_id"] {
+            content.threadIdentifier = "user_\(userId)"
+        } else if let topic = meta["topic"] as? String {
+            content.threadIdentifier = "topic_\(topic)"
+        } else if let type = content.userInfo["type"] as? String {
+            content.threadIdentifier = "type_\(type)"
         }
     }
     
@@ -88,13 +104,13 @@ class NotificationService: UNNotificationServiceExtension {
             if let updatedContent = try? request.content.updating(from: intent) {
                 if let mutableContent = updatedContent.mutableCopy() as? UNMutableNotificationContent {
                     mutableContent.categoryIdentifier = "CHAT_MESSAGE"
-                    self.contentHandler?(mutableContent)
+                    self.attachNotificationMediaIfNeeded(to: mutableContent, meta: meta, includeProfilePicture: false)
                 } else {
                     self.contentHandler?(updatedContent)
                 }
             } else {
                 content.categoryIdentifier = "CHAT_MESSAGE"
-                self.contentHandler?(content)
+                self.attachNotificationMediaIfNeeded(to: content, meta: meta, includeProfilePicture: false)
             }
         }
 
@@ -123,21 +139,25 @@ class NotificationService: UNNotificationServiceExtension {
         guard let meta = content.userInfo["meta"] as? [AnyHashable: Any] else {
             throw ParseNotificationPayloadError.missingMetadata("The notification has no meta.")
         }
-        
-        if let imageIdentifier = meta["image"] as? String {
-            attachMedia(to: content, withIdentifier: [imageIdentifier], fileType: UTType.webP, doScaleDown: true)
-        } else if let pfpIdentifier = meta["pfp"] as? String {
-            attachMedia(to: content, withIdentifier: [pfpIdentifier], fileType: UTType.webP, doScaleDown: true)
-        } else if let imagesIdentifier = meta["images"] as? Array<String> {
-            attachMedia(to: content, withIdentifier: imagesIdentifier, fileType: UTType.webP, doScaleDown: true)
+
+        attachNotificationMediaIfNeeded(to: content, meta: meta)
+    }
+
+    private func attachNotificationMediaIfNeeded(to content: UNMutableNotificationContent, meta: [AnyHashable: Any], includeProfilePicture: Bool = true) {
+        if let imagesIdentifier = meta["images"] as? [String], !imagesIdentifier.isEmpty {
+            attachMedia(to: content, identifiers: imagesIdentifier, fileType: UTType.webP, doScaleDown: true)
+        } else if let imageIdentifier = meta["image"] as? String {
+            attachMedia(to: content, identifiers: [imageIdentifier], fileType: UTType.webP, doScaleDown: true)
+        } else if includeProfilePicture, let pfpIdentifier = meta["pfp"] as? String {
+            attachMedia(to: content, identifiers: [pfpIdentifier], fileType: UTType.webP, doScaleDown: true)
         } else {
             contentHandler?(content)
         }
     }
-    
-    private func attachMedia(to content: UNMutableNotificationContent, withIdentifier identifier: Array<String>, fileType type: UTType?, doScaleDown scaleDown: Bool = false) {
-        let attachmentUrls = identifier.compactMap { element in
-            return getAttachmentUrl(for: element)
+
+    private func attachMedia(to content: UNMutableNotificationContent, identifiers: [String], fileType type: UTType?, doScaleDown scaleDown: Bool = false) {
+        let attachmentUrls = identifiers.compactMap { identifier in
+            getAttachmentUrl(for: identifier)
         }
 
         guard !attachmentUrls.isEmpty else {

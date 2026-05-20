@@ -20,6 +20,8 @@ import 'package:logging/logging.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:solar_network_sdk/solar_network_sdk.dart';
 
+import 'udid.dart';
+
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
     FlutterLocalNotificationsPlugin();
 
@@ -81,8 +83,8 @@ Future<void> initializeLocalNotifications(WidgetRef ref) async {
   const WindowsInitializationSettings initializationSettingsWindows =
       WindowsInitializationSettings(
         appName: 'Island',
-        appUserModelId: 'com.zhaishis.dyci',
-        guid: 'com.zhaishis.dyci',
+        appUserModelId: 'dev.solsynth.solian',
+        guid: 'dev.solsynth.solian',
       );
 
   const InitializationSettings initializationSettings = InitializationSettings(
@@ -153,12 +155,13 @@ StreamSubscription<WebSocketPacket> setupNotificationListener(
           // Use flutter_local_notifications for universal platforms
           const AndroidNotificationDetails androidNotificationDetails =
               AndroidNotificationDetails(
-                'channel_id',
-                'channel_name',
-                channelDescription: 'channel_description',
+                'island_notifications',
+                'Notifications',
+                channelDescription: 'Receive notifications from Island',
                 importance: Importance.max,
                 priority: Priority.high,
-                ticker: 'ticker',
+                ticker: 'Island notification',
+                icon: 'launcher_icon',
               );
           const NotificationDetails notificationDetails = NotificationDetails(
             android: androidNotificationDetails,
@@ -257,6 +260,10 @@ Future<void> subscribeUnifiedPushNotification(
 Future<void> _putTokenToRemote(Dio apiClient, String token, int type) async {
   await apiClient.put(
     "/ring/notifications/subscription",
-    data: {"type": type, "device_token": token},
+    data: {
+      "type": type,
+      "device_token": token,
+      "device_name": await getDeviceName(),
+    },
   );
 }

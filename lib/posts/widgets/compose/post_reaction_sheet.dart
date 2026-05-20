@@ -11,6 +11,7 @@ import 'package:island/accounts/widgets/activitypub/actor_profile.dart';
 import 'package:island/core/network.dart';
 import 'package:island/core/services/time.dart';
 import 'package:island/drive/widgets/cloud_files.dart';
+import 'package:island/posts/widgets/compose/post_interactions.dart';
 import 'package:island/shared/widgets/layouts/sheet_scaffold.dart';
 import 'package:island/shared/widgets/pagination_list.dart';
 import 'package:island/stickers/widgets/stickers/sticker_picker.dart';
@@ -63,15 +64,6 @@ class ReactionListNotifier
   }
 }
 
-const kAvailableStickers = {
-  'angry',
-  'clap',
-  'confuse',
-  'pray',
-  'thumb_up',
-  'party',
-};
-
 bool _getReactionImageAvailable(String symbol) {
   return kAvailableStickers.contains(symbol);
 }
@@ -79,7 +71,7 @@ bool _getReactionImageAvailable(String symbol) {
 Widget buildReactionIcon(String symbol, double size, {double iconSize = 24}) {
   if (_getReactionImageAvailable(symbol)) {
     return Image.asset(
-      'assets/images/stickers/$symbol.png',
+      'assets/images/stickers/$symbol.webp',
       width: size,
       height: size,
       fit: BoxFit.contain,
@@ -394,7 +386,7 @@ class PostReactionSheet extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(8),
                                 image: DecorationImage(
                                   image: AssetImage(
-                                    'assets/images/stickers/$symbol.png',
+                                    'assets/images/stickers/$symbol.webp',
                                   ),
                                   fit: BoxFit.cover,
                                   colorFilter: (reactionsMade[symbol] ?? false)
@@ -655,13 +647,8 @@ class CustomReactionForm extends HookConsumerWidget {
                     context,
                     Offset(horizontalOffset, verticalOffset),
                     alignment: Alignment.topLeft,
-                    onPick: (placeholder) {
-                      // Remove the surrounding : from the placeholder and add + prefix for custom reactions
-                      final slug = placeholder.substring(
-                        1,
-                        placeholder.length - 1,
-                      );
-                      symbol.value = '+$slug';
+                    onPick: (pack, sticker) {
+                      symbol.value = '+${sticker.slug}';
                     },
                   );
                 },

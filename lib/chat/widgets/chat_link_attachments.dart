@@ -21,22 +21,13 @@ class ChatCloudFileListNotifier
     with AsyncPaginationController<SnCloudFile> {
   @override
   Future<List<SnCloudFile>> fetch() async {
-    final client = ref.read(apiClientProvider);
-    final take = 20;
+    final driveApi = ref.read(solarNetworkClientProvider).drive;
+    const take = 20;
 
-    final queryParameters = {'offset': fetchedCount, 'take': take};
+    final result = await driveApi.listMyFiles(offset: fetchedCount, take: take);
 
-    final response = await client.get(
-      '/drive/files/me',
-      queryParameters: queryParameters,
-    );
-
-    final List<SnCloudFile> items = (response.data as List)
-        .map((e) => SnCloudFile.fromJson(e as Map<String, dynamic>))
-        .toList();
-    totalCount = int.parse(response.headers.value('X-Total') ?? '0');
-
-    return items;
+    totalCount = result.totalCount;
+    return result.items;
   }
 }
 
@@ -71,7 +62,7 @@ class ChatLinkAttachment extends HookConsumerWidget {
                     notifier: chatCloudFileListNotifierProvider.notifier,
                     padding: EdgeInsets.only(top: 8),
                     itemBuilder: (context, index, item) {
-                      final itemType = item.mimeType?.split('/').firstOrNull;
+                      final itemType = item.mimeType.split('/').firstOrNull;
                       return ListTile(
                         leading: ClipRRect(
                           borderRadius: const BorderRadius.all(
@@ -132,7 +123,7 @@ class ChatLinkAttachment extends HookConsumerWidget {
                             'fileIdLinkHint',
                           ).tr().fontSize(13).opacity(0.85),
                           onTap: () {
-                            launchUrlString('https://fs.dy.ci');
+                            launchUrlString('https://fs.solian.app');
                           },
                         ).padding(horizontal: 14),
                         const Gap(16),
@@ -151,7 +142,7 @@ class ChatLinkAttachment extends HookConsumerWidget {
                               try {
                                 final client = ref.read(apiClientProvider);
                                 final response = await client.get(
-                                  '/drive/files/$fileId/info',
+                                  '/fs/files/$fileId/info',
                                 );
                                 final SnCloudFile cloudFile =
                                     SnCloudFile.fromJson(response.data);

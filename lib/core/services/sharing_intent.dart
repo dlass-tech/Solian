@@ -119,7 +119,7 @@ class SharingIntentService {
         Logger.root.info(
           "SharingIntentService: Dispatching deep link $solianDeepLink",
         );
-        eventBus.fire(DynamicDeepLinkEvent(uri));
+        eventBus.fire(SolianDeepLinkEvent(uri));
         return;
       }
     }

@@ -39,7 +39,7 @@ Widget getProviderIcon(String provider, {double size = 24, Color? color}) {
       );
     case 'spotify':
       return Image.asset(
-        'assets/images/oidc/spotify.png',
+        'assets/images/oidc/spotify.webp',
         width: size,
         height: size,
         color: color,
@@ -179,8 +179,8 @@ class AccountConnectionNewSheet extends HookConsumerWidget {
             final credential = await SignInWithApple.getAppleIDCredential(
               scopes: [AppleIDAuthorizationScopes.email],
               webAuthenticationOptions: WebAuthenticationOptions(
-                clientId: 'com.zhaishis.dyci.pass',
-                redirectUri: Uri.parse('https://dy.ci/auth/callback'),
+                clientId: 'dev.solsynth.solarpass',
+                redirectUri: Uri.parse('https://solian.app/auth/callback'),
               ),
             );
 

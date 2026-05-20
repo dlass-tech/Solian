@@ -25,9 +25,7 @@ class TabsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AutoTabsRouter.tabBar(
-      physics: const NeverScrollableScrollPhysics(),
-      scrollDirection: isWideScreen(context) ? Axis.vertical : Axis.horizontal,
+    return AutoTabsRouter(
       routes: [
         DashboardRoute(),
         ExploreRoute(),
@@ -35,15 +33,52 @@ class TabsScreen extends StatelessWidget {
         RealmListRoute(),
         AccountRoute(),
         FileListRoute(),
+        WalletRoute(),
         ThoughtRoute(),
         CreatorHubRoute(),
         DeveloperHubRoute(),
       ],
-      builder: (context, child, _) {
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.easeOutCubic,
+      transitionBuilder: _buildTabTransition,
+      builder: (context, child) {
         return _TabsScreenContent(child: child);
       },
     );
   }
+}
+
+Widget _buildTabTransition(
+  BuildContext context,
+  Widget child,
+  Animation<double> animation,
+) {
+  final tabsRouter = AutoTabsRouter.of(context);
+  final theme = Theme.of(context);
+  final previousIndex = tabsRouter.previousIndex ?? tabsRouter.activeIndex;
+  final isForward = tabsRouter.activeIndex >= previousIndex;
+  final isWide = isWideScreen(context);
+
+  final offset = isWide
+      ? Offset(0, isForward ? 0.06 : -0.06)
+      : Offset(isForward ? 0.08 : -0.08, 0);
+
+  final position = Tween<Offset>(
+    begin: offset,
+    end: Offset.zero,
+  ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic));
+  final opacity = CurvedAnimation(
+    parent: animation,
+    curve: Curves.easeOutCubic,
+  );
+
+  return ColoredBox(
+    color: theme.colorScheme.surface,
+    child: FadeTransition(
+      opacity: opacity,
+      child: SlideTransition(position: position, child: child),
+    ),
+  );
 }
 
 class _TabsScreenContent extends ConsumerStatefulWidget {
@@ -141,8 +176,17 @@ class _TabsScreenContentState extends ConsumerState<_TabsScreenContent> {
           Icon(Symbols.folder_rounded, fill: selected ? 1 : null),
     ),
     _TabDestination(
-      id: 'thought',
+      id: 'wallet',
       routeIndex: 6,
+      routePath: '/wallet',
+      label: 'wallet'.tr(),
+      navigationIcon: Symbols.wallet,
+      iconBuilder: (selected) =>
+          Icon(Symbols.wallet, fill: selected ? 1 : null),
+    ),
+    _TabDestination(
+      id: 'thought',
+      routeIndex: 7,
       routePath: '/thought',
       label: 'aiThought'.tr(),
       navigationIcon: Symbols.bubble_chart,
@@ -151,7 +195,7 @@ class _TabsScreenContentState extends ConsumerState<_TabsScreenContent> {
     ),
     _TabDestination(
       id: 'creators',
-      routeIndex: 7,
+      routeIndex: 8,
       routePath: '/creators',
       label: 'creatorHub'.tr(),
       navigationIcon: Symbols.design_services_rounded,
@@ -160,7 +204,7 @@ class _TabsScreenContentState extends ConsumerState<_TabsScreenContent> {
     ),
     _TabDestination(
       id: 'developers',
-      routeIndex: 8,
+      routeIndex: 9,
       routePath: '/developers',
       label: 'developerHub'.tr(),
       navigationIcon: Symbols.data_object_rounded,

@@ -6,22 +6,62 @@ part of 'config.dart';
 // JsonSerializableGenerator
 // **************************************************************************
 
+_IpOverride _$IpOverrideFromJson(Map<String, dynamic> json) => _IpOverride(
+  ip: json['ip'] as String,
+  port: (json['port'] as num?)?.toInt(),
+);
+
+Map<String, dynamic> _$IpOverrideToJson(_IpOverride instance) =>
+    <String, dynamic>{'ip': instance.ip, 'port': instance.port};
+
+_IpOverrideSettings _$IpOverrideSettingsFromJson(Map<String, dynamic> json) =>
+    _IpOverrideSettings(
+      enabled: json['enabled'] as bool,
+      overrides: (json['overrides'] as List<dynamic>)
+          .map((e) => IpOverride.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
+
+Map<String, dynamic> _$IpOverrideSettingsToJson(_IpOverrideSettings instance) =>
+    <String, dynamic>{
+      'enabled': instance.enabled,
+      'overrides': instance.overrides.map((e) => e.toJson()).toList(),
+    };
+
 _ThemeColors _$ThemeColorsFromJson(Map<String, dynamic> json) => _ThemeColors(
   primary: (json['primary'] as num?)?.toInt(),
+  onPrimary: (json['on_primary'] as num?)?.toInt(),
+  primaryContainer: (json['primary_container'] as num?)?.toInt(),
   secondary: (json['secondary'] as num?)?.toInt(),
+  onSecondary: (json['on_secondary'] as num?)?.toInt(),
+  secondaryContainer: (json['secondary_container'] as num?)?.toInt(),
   tertiary: (json['tertiary'] as num?)?.toInt(),
+  onTertiary: (json['on_tertiary'] as num?)?.toInt(),
+  tertiaryContainer: (json['tertiary_container'] as num?)?.toInt(),
   surface: (json['surface'] as num?)?.toInt(),
+  surfaceContainerHighest: (json['surface_container_highest'] as num?)?.toInt(),
   background: (json['background'] as num?)?.toInt(),
+  outline: (json['outline'] as num?)?.toInt(),
+  shadow: (json['shadow'] as num?)?.toInt(),
   error: (json['error'] as num?)?.toInt(),
 );
 
 Map<String, dynamic> _$ThemeColorsToJson(_ThemeColors instance) =>
     <String, dynamic>{
       'primary': instance.primary,
+      'on_primary': instance.onPrimary,
+      'primary_container': instance.primaryContainer,
       'secondary': instance.secondary,
+      'on_secondary': instance.onSecondary,
+      'secondary_container': instance.secondaryContainer,
       'tertiary': instance.tertiary,
+      'on_tertiary': instance.onTertiary,
+      'tertiary_container': instance.tertiaryContainer,
       'surface': instance.surface,
+      'surface_container_highest': instance.surfaceContainerHighest,
       'background': instance.background,
+      'outline': instance.outline,
+      'shadow': instance.shadow,
       'error': instance.error,
     };
 
@@ -115,7 +155,7 @@ final class AppSettingsNotifierProvider
 }
 
 String _$appSettingsNotifierHash() =>
-    r'c8db77930ffa161758f59b523976fef3c86ff3e4';
+    r'67f25a5dba7b0917f28c19c48272678345bc1999';
 
 abstract class _$AppSettingsNotifier extends $Notifier<AppSettings> {
   AppSettings build();

@@ -29,7 +29,10 @@ class CommandPaletteWidget extends HookConsumerWidget {
 
   const CommandPaletteWidget({super.key, required this.onDismiss});
 
-  static List<SpecialAction> _getSpecialActions(BuildContext context) {
+  static List<SpecialAction> _getSpecialActions(
+    WidgetRef ref,
+    bool isDeveloperMode,
+  ) {
     return [
       SpecialAction(
         name: 'postCompose'.tr(),
@@ -63,15 +66,16 @@ class CommandPaletteWidget extends HookConsumerWidget {
           toggleLogOverlay();
         },
       ),
-      SpecialAction(
-        name: 'Debug Panel',
-        description: 'Open the debug panel overlay',
-        searchableAliases: ['debug', 'panel', 'bug', 'debug panel'],
-        icon: Symbols.bug_report,
-        action: () {
-          toggleDebugOverlay();
-        },
-      ),
+      if (isDeveloperMode)
+        SpecialAction(
+          name: 'Debug Panel',
+          description: 'Open the debug panel overlay',
+          searchableAliases: ['debug', 'panel', 'bug', 'debug panel'],
+          icon: Symbols.bug_report,
+          action: () {
+            toggleDebugOverlay(ref);
+          },
+        ),
     ];
   }
 
@@ -82,6 +86,7 @@ class CommandPaletteWidget extends HookConsumerWidget {
     final searchQuery = useState('');
     final focusedIndex = useState<int?>(null);
     final scrollController = useScrollController();
+    final isDeveloperMode = ref.watch(developerModeProvider);
 
     final animationController = useAnimationController(
       duration: const Duration(milliseconds: 200),
@@ -160,7 +165,7 @@ class CommandPaletteWidget extends HookConsumerWidget {
 
     final filteredSpecialActions = searchQuery.value.isEmpty
         ? <SpecialAction>[]
-        : _getSpecialActions(context)
+        : _getSpecialActions(ref, isDeveloperMode)
               .where((action) {
                 final query = searchQuery.value.toLowerCase();
                 return action.name.toLowerCase().contains(query) ||

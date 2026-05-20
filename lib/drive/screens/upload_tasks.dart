@@ -183,7 +183,7 @@ class UploadTasks extends _$UploadTasks {
           fileSize: results?['file_size'] as int? ?? task.fileSize,
           contentType: results?['mime_type'] as String? ?? task.contentType,
           result: results?['file_info'] != null
-              ? SnCloudFile.fromJson(results!['file_info'])
+              ? SnCloudFileReference.fromJson(results!['file_info'])
               : null,
           updatedAt: DateTime.now(),
         );
@@ -341,7 +341,7 @@ class UploadTasks extends _$UploadTasks {
       id: taskId,
       taskId: taskId,
       fileName: item.name,
-      contentType: item.mimeType ?? '',
+      contentType: item.mimeType,
       fileSize: 0,
       uploadedBytes: 0,
       totalChunks: 1,
@@ -401,6 +401,8 @@ class EnhancedFileUploader extends FileUploader {
     int? customChunkSize,
     String? parentId,
     String? path,
+    String? usage,
+    String? applicationType,
     Function(double? progress, Duration estimate)? onProgress,
   }) async {
     final overallTimer = Stopwatch()..start();
@@ -473,13 +475,11 @@ class EnhancedFileUploader extends FileUploader {
           fileName: fileName,
           contentType: contentType,
           poolId: poolId,
-          bundleId: bundleId,
           expiredAt: expiredAt,
           parentId: parentId,
           path: path,
-          encryptionScheme: encryptionScheme,
-          encryptionHeader: encryptionHeader,
-          encryptionSignature: encryptionSignature,
+          usage: usage,
+          applicationType: applicationType,
           onSendProgress: (sent, total) {
             if (total <= 0) return;
             final progress = sent / total;
@@ -533,15 +533,12 @@ class EnhancedFileUploader extends FileUploader {
       fileName: fileName,
       contentType: contentType,
       poolId: poolId,
-      bundleId: bundleId,
-      encryptPassword: encryptPassword,
-      encryptionScheme: encryptionScheme,
-      encryptionHeader: encryptionHeader,
-      encryptionSignature: encryptionSignature,
       expiredAt: expiredAt,
       chunkSize: customChunkSize,
       parentId: parentId,
       path: path,
+      usage: usage,
+      applicationType: applicationType,
     );
     createTimer.stop();
     debugPrint(

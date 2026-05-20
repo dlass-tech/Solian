@@ -41,16 +41,22 @@ class ChatSyncHintNotifier extends Notifier<String?> {
 }
 
 final flashingMessagesProvider =
-    NotifierProvider<FlashingMessagesNotifier, Set<String>>(
+    NotifierProvider<FlashingMessagesNotifier, Map<String, int>>(
       FlashingMessagesNotifier.new,
     );
 
-class FlashingMessagesNotifier extends Notifier<Set<String>> {
+class FlashingMessagesNotifier extends Notifier<Map<String, int>> {
   @override
-  Set<String> build() => {};
+  Map<String, int> build() => {};
 
-  void update(Set<String> Function(Set<String>) cb) {
-    state = cb(state);
+  void trigger(String messageId) {
+    state = {...state, messageId: (state[messageId] ?? 0) + 1};
+  }
+
+  void clearMessage(String messageId) {
+    final next = Map<String, int>.from(state);
+    next.remove(messageId);
+    state = next;
   }
 
   void clear() => state = {};
@@ -296,10 +302,26 @@ class ChatGlobalSyncNotifier extends _$ChatGlobalSyncNotifier {
             mergedMeta.addAll(message.meta);
             mergedMeta.remove('message_id');
 
-            final updatedRemote = existingRemote.copyWith(
-              meta: mergedMeta,
-              editedAt: message.createdAt,
-            );
+            final updatePayload = LocalChatMessage.fromRemoteMessage(
+              message,
+              MessageStatus.sent,
+            ).toRemoteMessage();
+
+            final isLinkUpdate = message.type == 'messages.update.links';
+            final updatedRemote = isLinkUpdate
+                ? existingRemote.copyWith(
+                    meta: mergedMeta,
+                    editedAt: message.createdAt,
+                  )
+                : existingRemote.copyWith(
+                    content: updatePayload.content,
+                    attachments: updatePayload.attachments,
+                    membersMentioned: updatePayload.membersMentioned,
+                    repliedMessageId: updatePayload.repliedMessageId,
+                    forwardedMessageId: updatePayload.forwardedMessageId,
+                    meta: mergedMeta,
+                    editedAt: message.createdAt,
+                  );
 
             final updatedMessage = LocalChatMessage.fromRemoteMessage(
               updatedRemote,

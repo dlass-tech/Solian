@@ -28,7 +28,7 @@ import 'package:solar_network_sdk/solar_network_sdk.dart';
 
 final tokenStorage = SharedPreferencesTokenStorage(key: 'solar_token');
 final sdk = SolarNetworkSDK.create(
-  serverUrl: 'https://api.dy.ci',
+  serverUrl: 'https://api.solian.app',
   tokenStorage: tokenStorage,
 );
 ```
@@ -65,7 +65,7 @@ final client = WebAuthClient(
   webUrl: 'https://app.solian.fr',
 );
 
-// Step 1: request challenge (opens Dynamic app)
+// Step 1: request challenge (opens Solian app)
 final challengeUrl = client.getProtocolChallengeUrl(
   appSlug: 'sopush',
   redirectUri: 'acme://auth/callback',

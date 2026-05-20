@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:island/core/config.dart';
+import 'package:island/core/network.dart';
 import 'package:logging/logging.dart';
 
 import 'package:path_provider/path_provider.dart';
@@ -29,7 +30,28 @@ class MediaProxyServer {
   MediaProxyServer(this._ref) {
     _httpClient = HttpClient()
       ..badCertificateCallback = (cert, host, port) => true;
+    _applyIpOverride();
+    _ref.listen<IpOverrideMode>(
+      ipOverrideModeProvider,
+      (previous, next) => _applyIpOverride(),
+    );
+    _ref.listen<List<String>>(
+      ipOverrideDomainsProvider,
+      (previous, next) => _applyIpOverride(),
+    );
+    _ref.listen<IpOverrideSettings>(
+      ipOverrideSettingsProvider,
+      (previous, next) => _applyIpOverride(),
+    );
   }
+
+  void _applyIpOverride() {
+    _httpClient.connectionFactory = _ref.read(
+      mediaIpOverrideConnectionFactoryProvider,
+    );
+  }
+
+  void refreshIpOverride() => _applyIpOverride();
 
   Future<void> start() async {
     if (_isRunning) return;

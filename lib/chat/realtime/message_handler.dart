@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:island/accounts/account_pod.dart';
 import 'package:island/chat/data/message_cache.dart';
 import 'package:island/chat/data/message_repository.dart';
 import 'package:island/chat/e2ee_message_service.dart';
@@ -88,6 +89,9 @@ class RealtimeMessageHandler {
   Future<void> processMessageDeletion(String messageId) =>
       _handleDeleteMessage(messageId);
 
+  Future<void> processMessageDeleteEvent(SnChatMessage message) =>
+      _handleDeleteMessageEvent(message);
+
   /// Processes reaction added event manually.
   Future<void> processReactionAdded(SnChatMessage message) =>
       _handleReactionEvent(message);
@@ -143,7 +147,7 @@ class RealtimeMessageHandler {
       case 'messages.delete':
         final message = _parseMessage(packet.data);
         if (message != null && message.chatRoomId == _roomId) {
-          _handleDeleteMessage(message.meta['message_id'] ?? message.id);
+          _handleDeleteMessageEvent(message);
         }
         break;
 
@@ -214,6 +218,9 @@ class RealtimeMessageHandler {
       MessageStatus.sent,
     );
 
+    await _repository.saveMessage(updateEvent);
+    onNewMessage?.call(updateEvent);
+
     final updated = _buildUpdatedMessage(existing, updateEvent);
 
     await _repository.saveMessage(updated);
@@ -224,7 +231,12 @@ class RealtimeMessageHandler {
     final type = event.message.type;
 
     // Handle reaction events
-    if (type == 'messages.reaction.added' || type == 'messages.reaction.removed') {
+    if (type == 'messages.reaction.added' ||
+        type == 'messages.reaction.removed') {
+      if (event.appliedInBackground) {
+        await _handleReactionAppliedInBackground(event.message);
+        return;
+      }
       await _handleReactionEvent(event.message);
       return;
     }
@@ -233,11 +245,24 @@ class RealtimeMessageHandler {
     if (type == 'messages.update' ||
         type == 'messages.update.links' ||
         type == 'messages.delete') {
-      if (_isSystemEvent(type)) {
-        await _handleNewMessage(event.message);
+      if (type == 'messages.delete') {
+        await _handleDeleteMessageEvent(event.message);
       } else {
         await _handleUpdateMessage(event.message);
       }
+    }
+  }
+
+  Future<void> _handleReactionAppliedInBackground(
+    SnChatMessage remoteMessage,
+  ) async {
+    final targetId = remoteMessage.meta['message_id']?.toString();
+    if (targetId == null || targetId.isEmpty) return;
+
+    _messageCache.remove(targetId);
+    final updated = await _repository.getLocalMessage(targetId);
+    if (updated != null) {
+      onMessageUpdate?.call(updated);
     }
   }
 
@@ -248,11 +273,48 @@ class RealtimeMessageHandler {
     final existing = await _repository.getLocalMessage(targetId);
     if (existing == null) return;
 
-    // Extract reaction data from meta
-    final reactionsCount = _extractReactionsCount(remoteMessage);
-    final reactionsMade = _extractReactionsMade(remoteMessage);
+    final countSnapshot = _extractReactionsCount(remoteMessage);
+    final madeSnapshot = _extractReactionsMade(remoteMessage);
+    final reactionsCount =
+        countSnapshot ?? _extractExistingReactionsCount(existing);
+    final reactionsMade =
+        madeSnapshot ?? _extractExistingReactionsMade(existing);
+    final symbol = _extractReactionSymbol(remoteMessage);
+    final currentUserId = _ref.read(userInfoProvider).value?.id;
+    final isCurrentUserReaction =
+        currentUserId != null && remoteMessage.senderId == currentUserId;
 
-    // Merge with existing data
+    if (countSnapshot == null) {
+      if (symbol == null || symbol.isEmpty) return;
+      final alreadyAppliedLocally =
+          isCurrentUserReaction &&
+          ((remoteMessage.type == 'messages.reaction.added' &&
+                  reactionsMade[symbol] == true) ||
+              (remoteMessage.type == 'messages.reaction.removed' &&
+                  reactionsMade[symbol] != true));
+      if (!alreadyAppliedLocally) {
+        final delta = remoteMessage.type == 'messages.reaction.removed'
+            ? -1
+            : 1;
+        final nextCount = (reactionsCount[symbol] ?? 0) + delta;
+        if (nextCount > 0) {
+          reactionsCount[symbol] = nextCount;
+        } else {
+          reactionsCount.remove(symbol);
+        }
+      }
+    }
+
+    if (madeSnapshot == null && symbol != null && symbol.isNotEmpty) {
+      if (remoteMessage.type == 'messages.reaction.added' &&
+          isCurrentUserReaction) {
+        reactionsMade[symbol] = true;
+      } else if (remoteMessage.type == 'messages.reaction.removed' &&
+          isCurrentUserReaction) {
+        reactionsMade.remove(symbol);
+      }
+    }
+
     final updatedData = Map<String, dynamic>.from(existing.data);
     updatedData['reactions_count'] = reactionsCount;
     updatedData['reactions_made'] = reactionsMade;
@@ -265,6 +327,24 @@ class RealtimeMessageHandler {
 
   Future<void> _handleDeleteEvent(ChatMessageDeleteEvent event) async {
     await _handleDeleteMessage(event.messageId);
+  }
+
+  Future<void> _handleDeleteMessageEvent(SnChatMessage remoteMessage) async {
+    if (_isJumping) {
+      _hasPendingRefresh = true;
+      return;
+    }
+
+    final deleteEvent = LocalChatMessage.fromRemoteMessage(
+      remoteMessage,
+      MessageStatus.sent,
+    );
+    await _repository.saveMessage(deleteEvent);
+    onNewMessage?.call(deleteEvent);
+
+    final targetId =
+        remoteMessage.meta['message_id']?.toString() ?? remoteMessage.id;
+    await _handleDeleteMessage(targetId);
   }
 
   Future<void> _handleDeleteMessage(String messageId) async {
@@ -288,6 +368,7 @@ class RealtimeMessageHandler {
       content: 'This message was deleted',
       deletedAt: DateTime.now(),
       attachments: [],
+      meta: <String, dynamic>{},
     );
 
     final deleted = LocalChatMessage.fromRemoteMessage(
@@ -402,11 +483,20 @@ class RealtimeMessageHandler {
     }
 
     // Regular update
+    final mergedMeta = Map<String, dynamic>.of(existing.toRemoteMessage().meta);
+    mergedMeta.addAll(updateRemote.meta);
+    mergedMeta.remove('message_id');
+
     return LocalChatMessage.fromRemoteMessage(
-      updateRemote.copyWith(
+      existing.toRemoteMessage().copyWith(
+        content: updateRemote.content,
+        attachments: updateRemote.attachments,
+        membersMentioned: updateRemote.membersMentioned,
+        repliedMessageId: updateRemote.repliedMessageId,
+        forwardedMessageId: updateRemote.forwardedMessageId,
         id: existing.id,
         createdAt: existing.createdAt,
-        meta: Map.of(updateRemote.meta)..remove('message_id'),
+        meta: mergedMeta,
         type: existing.type,
         editedAt: updateEvent.createdAt,
       ),
@@ -444,25 +534,36 @@ class RealtimeMessageHandler {
     );
   }
 
-  bool _needsAttachmentRefresh(LocalChatMessage existing, SnChatMessage remote) {
+  bool _needsAttachmentRefresh(
+    LocalChatMessage existing,
+    SnChatMessage remote,
+  ) {
     return existing.attachments.isEmpty && remote.attachments.isNotEmpty;
   }
 
-  bool _isSystemEvent(String type) {
-    if (type.startsWith('system.')) return true;
-    return switch (type) {
-      'messages.update' ||
-      'messages.update.links' ||
-      'messages.delete' ||
-      'messages.reaction.added' ||
-      'messages.reaction.removed' =>
-        true,
-      _ => false,
-    };
+  Map<String, int>? _extractReactionsCount(SnChatMessage message) {
+    if (message.reactionsCount.isNotEmpty) {
+      return Map<String, int>.from(message.reactionsCount);
+    }
+    final raw = message.meta['reactions_count'];
+    if (raw is! Map) return null;
+    return raw.map((key, value) {
+      final count = value is int ? value : int.tryParse(value.toString()) ?? 0;
+      return MapEntry(key.toString(), count);
+    });
   }
 
-  Map<String, dynamic> _extractReactionsCount(SnChatMessage message) {
-    final raw = message.meta['reactions_count'];
+  Map<String, bool>? _extractReactionsMade(SnChatMessage message) {
+    if (message.reactionsMade.isNotEmpty) {
+      return Map<String, bool>.from(message.reactionsMade);
+    }
+    final raw = message.meta['reactions_made'];
+    if (raw is! Map) return null;
+    return raw.map((key, value) => MapEntry(key.toString(), value == true));
+  }
+
+  Map<String, int> _extractExistingReactionsCount(LocalChatMessage message) {
+    final raw = message.data['reactions_count'];
     if (raw is! Map) return {};
     return raw.map((key, value) {
       final count = value is int ? value : int.tryParse(value.toString()) ?? 0;
@@ -470,33 +571,41 @@ class RealtimeMessageHandler {
     });
   }
 
-  Map<String, dynamic> _extractReactionsMade(SnChatMessage message) {
-    final raw = message.meta['reactions_made'];
+  Map<String, bool> _extractExistingReactionsMade(LocalChatMessage message) {
+    final raw = message.data['reactions_made'];
     if (raw is! Map) return {};
     return raw.map((key, value) => MapEntry(key.toString(), value == true));
   }
 
+  String? _extractReactionSymbol(SnChatMessage message) {
+    final direct = message.meta['symbol']?.toString();
+    if (direct != null && direct.isNotEmpty) return direct;
+    final reaction = message.meta['reaction'];
+    if (reaction is Map) return reaction['symbol']?.toString();
+    return null;
+  }
+
   Map<String, dynamic> _buildSystemSender(DateTime now) => {
-        'id': 'system',
-        'chat_room_id': _roomId,
-        'account_id': 'system',
-        'created_at': now.toIso8601String(),
-        'updated_at': now.toIso8601String(),
-        'deleted_at': null,
-        'nick': null,
-        'notify': 0,
-        'joined_at': now.toIso8601String(),
-        'break_until': null,
-        'timeout_until': null,
-        'last_read_at': null,
-        'status': null,
-        'realm_nick': null,
-        'realm_bio': null,
-        'realm_experience': null,
-        'realm_level': null,
-        'realm_leveling_progress': null,
-        'realm_label': null,
-      };
+    'id': 'system',
+    'chat_room_id': _roomId,
+    'account_id': 'system',
+    'created_at': now.toIso8601String(),
+    'updated_at': now.toIso8601String(),
+    'deleted_at': null,
+    'nick': null,
+    'notify': 0,
+    'joined_at': now.toIso8601String(),
+    'break_until': null,
+    'timeout_until': null,
+    'last_read_at': null,
+    'status': null,
+    'realm_nick': null,
+    'realm_bio': null,
+    'realm_experience': null,
+    'realm_level': null,
+    'realm_leveling_progress': null,
+    'realm_label': null,
+  };
 }
 
 class TimeoutException implements Exception {

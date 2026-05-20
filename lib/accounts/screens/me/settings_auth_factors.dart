@@ -332,7 +332,7 @@ class _AuthFactorNewSheetState extends ConsumerState<AuthFactorNewSheet> {
 
         final serverUrl = ref.read(serverUrlProvider);
         final rpId = Uri.parse(serverUrl).host;
-        final rpName = 'Dynamic Network';
+        final rpName = 'Solar Network';
         final deviceId = await getUdid();
         final deviceName = await getDeviceName();
 

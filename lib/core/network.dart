@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio_smart_retry/dio_smart_retry.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -31,6 +32,24 @@ class RefreshTokenExpiredException implements Exception {
 
 // Network status enum to track different states
 enum NetworkStatus { online, notReady, maintenance, offline }
+
+final connectivityProvider = Provider<Connectivity>((ref) => Connectivity());
+
+final connectivityStatusProvider = StreamProvider<List<ConnectivityResult>>((
+  ref,
+) async* {
+  final connectivity = ref.watch(connectivityProvider);
+  yield await connectivity.checkConnectivity();
+  yield* connectivity.onConnectivityChanged;
+});
+
+bool hasNetworkConnectivity(List<ConnectivityResult> results) {
+  return results.any((result) => result != ConnectivityResult.none);
+}
+
+bool hasNetworkConnectivityValue(AsyncValue<List<ConnectivityResult>> value) {
+  return value.maybeWhen(data: hasNetworkConnectivity, orElse: () => true);
+}
 
 // Provider for network status using Riverpod v3 annotation
 @riverpod
@@ -102,7 +121,7 @@ final userAgentProvider = FutureProvider<String>((ref) async {
 
   final packageInfo = await PackageInfo.fromPlatform();
 
-  return 'Dynamic/${packageInfo.version}+${packageInfo.buildNumber} ($platformInfo)';
+  return 'Solian/${packageInfo.version}+${packageInfo.buildNumber} ($platformInfo)';
 });
 
 const String _chatE2eeCapability = 'chat-e2ee-v1';
@@ -112,6 +131,252 @@ const Duration _tokenRefreshInterval = Duration(minutes: 5);
 
 Future<_StoredTokenPair?>? _tokenRefreshInFlight;
 Future<_StoredTokenPair?>? _forceTokenRefreshInFlight;
+
+typedef IpOverrideConnectionFactory =
+    Future<ConnectionTask<SecureSocket>> Function(
+      Uri url,
+      String? proxyHost,
+      int? proxyPort,
+    );
+
+class AppHttpOverrides extends HttpOverrides {
+  final IpOverrideConnectionFactory? connectionFactory;
+
+  AppHttpOverrides({this.connectionFactory});
+
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    final client = super.createHttpClient(context);
+    if (connectionFactory != null) {
+      client.connectionFactory = connectionFactory;
+    }
+    return client;
+  }
+}
+
+IpOverrideMode _readIpOverrideMode(SharedPreferences prefs) {
+  final rawMode = prefs.getString(kAppIpOverrideMode);
+  if (rawMode != null) {
+    return IpOverrideMode.values.firstWhere(
+      (mode) => mode.name == rawMode,
+      orElse: () => IpOverrideMode.off,
+    );
+  }
+
+  final enabled = prefs.getBool(kAppIpOverrideEnabled) ?? false;
+  return enabled ? IpOverrideMode.complete : IpOverrideMode.off;
+}
+
+List<IpOverride> _readIpOverrideList(SharedPreferences prefs) {
+  final rawList = prefs.getString(kAppIpOverrideList);
+  if (rawList == null || rawList.isEmpty) {
+    return [];
+  }
+
+  try {
+    final decoded = jsonDecode(rawList) as List;
+    return decoded
+        .map((e) => IpOverride.fromJson(e as Map<String, dynamic>))
+        .toList();
+  } catch (_) {
+    return [];
+  }
+}
+
+List<String> _readIpOverrideDomains(SharedPreferences prefs, String serverUrl) {
+  final defaults = <String>[];
+
+  try {
+    final host = Uri.parse(serverUrl).host;
+    if (host.isNotEmpty) {
+      defaults.add(host);
+    }
+  } catch (_) {}
+
+  final rawDomains = prefs.getString(kAppIpOverrideDomains);
+  if (rawDomains == null || rawDomains.isEmpty) {
+    return defaults;
+  }
+
+  try {
+    final decoded = jsonDecode(rawDomains);
+    if (decoded is List) {
+      final domains = decoded
+          .map((item) => item.toString().trim())
+          .where((item) => item.isNotEmpty)
+          .toList();
+      return domains.isNotEmpty ? domains : defaults;
+    }
+  } catch (_) {}
+
+  return defaults;
+}
+
+HttpOverrides? createAppHttpOverrides({
+  required IpOverrideMode mode,
+  required IpOverrideSettings settings,
+  required List<String> domains,
+  required String serverUrl,
+}) {
+  if (mode == IpOverrideMode.off || settings.overrides.isEmpty) {
+    return null;
+  }
+
+  final override = settings.overrides.firstOrNull;
+  if (override == null) {
+    return null;
+  }
+
+  IpOverrideConnectionFactory? connectionFactory;
+
+  if (mode == IpOverrideMode.complete) {
+    final host = Uri.tryParse(serverUrl)?.host;
+    if (host == null || host.isEmpty) {
+      Logger.root.fine('[http.override] Disabled: server host is unavailable.');
+      return null;
+    }
+    connectionFactory = createIpOverrideConnectionFactory(
+      domainSuffix: host,
+      ip: override.ip,
+      port: override.port,
+    );
+    Logger.root.fine(
+      '[http.override] Complete mode enabled for $host -> ${override.ip}${override.port != null ? ':${override.port}' : ''}',
+    );
+  } else {
+    connectionFactory = (uri, proxyHost, proxyPort) async {
+      final useOverride = domains.any((domain) => matchesIpOverrideDomain(uri, domain));
+      final targetHost = useOverride ? override.ip : uri.host;
+      final targetPort = (useOverride ? override.port : null) ?? uri.port;
+      Logger.root.fine(
+        '[http.override] ${useOverride ? 'Using' : 'Skipping'} override for ${uri.host}${uri.hasPort ? ':${uri.port}' : ''} -> $targetHost:$targetPort',
+      );
+      final socketFuture = () async {
+        final socket = await Socket.connect(
+          targetHost,
+          targetPort == 0 ? 443 : targetPort,
+        );
+
+        return SecureSocket.secure(
+          socket,
+          host: uri.host,
+          onBadCertificate: (_) => true,
+        );
+        }();
+        return ConnectionTask.fromSocket(socketFuture, () {
+          Logger.root.fine(
+            '[http.override] Cancelled IP override connection to ${uri.host} ($targetHost:$targetPort)',
+          );
+        });
+      };
+  }
+
+  return AppHttpOverrides(connectionFactory: connectionFactory);
+}
+
+HttpOverrides? createAppHttpOverridesFromPrefs(SharedPreferences prefs) {
+  final mode = _readIpOverrideMode(prefs);
+  final serverUrl =
+      prefs.getString(kNetworkServerStoreKey) ?? kNetworkServerDefault;
+  final settings = IpOverrideSettings(
+    enabled: mode != IpOverrideMode.off,
+    overrides: _readIpOverrideList(prefs),
+  );
+  final domains = _readIpOverrideDomains(prefs, serverUrl);
+  return createAppHttpOverrides(
+    mode: mode,
+    settings: settings,
+    domains: domains,
+    serverUrl: serverUrl,
+  );
+}
+
+final appHttpOverridesProvider = Provider<HttpOverrides?>((ref) {
+  final mode = ref.watch(ipOverrideModeProvider);
+  final settings = ref.watch(ipOverrideSettingsProvider);
+  final domains = ref.watch(ipOverrideDomainsProvider);
+  final serverUrl = ref.watch(serverUrlProvider);
+  return createAppHttpOverrides(
+    mode: mode,
+    settings: settings,
+    domains: domains,
+    serverUrl: serverUrl,
+  );
+});
+
+IpOverrideConnectionFactory createIpOverrideConnectionFactory({
+  required String domainSuffix,
+  required String ip,
+  int? port,
+}) {
+  return (Uri uri, String? proxyHost, int? proxyPort) async {
+    final useOverride = uri.host.endsWith(domainSuffix);
+    final targetHost = useOverride ? ip : uri.host;
+    final targetPort = (useOverride ? port : null) ?? uri.port;
+    Logger.root.fine(
+      '[http.override] ${useOverride ? 'Using' : 'Skipping'} override for ${uri.host}${uri.hasPort ? ':${uri.port}' : ''} -> $targetHost:$targetPort',
+    );
+    final socketFuture = () async {
+      final socket = await Socket.connect(
+        targetHost,
+        targetPort == 0 ? 443 : targetPort,
+      );
+
+      return SecureSocket.secure(
+        socket,
+        host: uri.host,
+        onBadCertificate: (_) => true,
+      );
+    }();
+    return ConnectionTask.fromSocket(socketFuture, () {
+      Logger.root.fine(
+        'Canncelled established IP override connection to ${uri.host} ($targetHost:$targetPort)',
+      );
+    });
+  };
+}
+
+final mediaIpOverrideConnectionFactoryProvider =
+    Provider<IpOverrideConnectionFactory?>((ref) {
+      final mode = ref.watch(ipOverrideModeProvider);
+      final settings = ref.watch(ipOverrideSettingsProvider);
+      final domains = ref.watch(ipOverrideDomainsProvider);
+      if (mode == IpOverrideMode.off || settings.overrides.isEmpty) {
+        return null;
+      }
+      if (domains.isEmpty) {
+        return null;
+      }
+      final override = settings.overrides.firstOrNull;
+      if (override == null) {
+        return null;
+      }
+      return (uri, proxyHost, proxyPort) async {
+        final useOverride = domains.any((domain) => matchesIpOverrideDomain(uri, domain));
+        final targetHost = useOverride ? override.ip : uri.host;
+        final targetPort = (useOverride ? override.port : null) ?? uri.port;
+        Logger.root.fine(
+          '[media.proxy] ${useOverride ? 'Using' : 'Skipping'} override for ${uri.host}${uri.hasPort ? ':${uri.port}' : ''} -> $targetHost:$targetPort',
+        );
+        final socketFuture = () async {
+          final socket = await Socket.connect(
+            targetHost,
+            targetPort == 0 ? 443 : targetPort,
+          );
+
+          return SecureSocket.secure(
+            socket,
+            host: uri.host,
+            onBadCertificate: (_) => true,
+          );
+        }();
+        return ConnectionTask.fromSocket(socketFuture, () {
+          Logger.root.fine(
+            '[media.proxy] Cancelled IP override connection to ${uri.host} ($targetHost:$targetPort)',
+          );
+        });
+      };
+    });
 
 final padlockApiClientProvider = Provider<Dio>((ref) {
   final serverUrl = ref.watch(serverUrlProvider);
@@ -692,7 +957,7 @@ class _StoredTokenPair {
 }
 
 // ==========================================
-// Dynamic Network SDK Client Provider
+// Solar Network SDK Client Provider
 // ==========================================
 
 /// Provider for the SolarNetworkClient instance.

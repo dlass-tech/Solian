@@ -16,7 +16,7 @@ import 'package:photo_view/photo_view_gallery.dart';
 import 'package:solar_network_sdk/solar_network_sdk.dart';
 
 class CloudFileLightbox extends HookConsumerWidget {
-  final List<SnCloudFile> items;
+  final List<IDisplayableCloudFile> items;
   final int initialIndex;
   final String? heroTag;
 
@@ -87,9 +87,12 @@ class CloudFileLightbox extends HookConsumerWidget {
 
       switch (result) {
         case 'save':
-          ref
-              .read(driveFileDownloaderProvider)
-              .saveToGallery(items[currentIndex.value]);
+          final item = items[currentIndex.value];
+          if (item is SnCloudFile) {
+            ref
+                .read(driveFileDownloaderProvider)
+                .saveToGallery(item);
+          }
           break;
         case 'toggle_original':
           showOriginal.value = !showOriginal.value;
@@ -116,7 +119,7 @@ class CloudFileLightbox extends HookConsumerWidget {
               },
               builder: (context, index) {
                 final item = items[index];
-                final isImage = item.mimeType?.startsWith('image') == true;
+                final isImage = item.mimeType.startsWith('image') == true;
                 final isHero = heroTag != null && index == initialIndex;
 
                 if (isImage) {
@@ -235,36 +238,10 @@ class CloudFileLightbox extends HookConsumerWidget {
             fit: StackFit.expand,
             children: [
               buildContent(),
-              if (items.length > 1) ...[
-                if (currentIndex.value > 0)
-                  Positioned(
-                    left: 16,
-                    top: 0,
-                    bottom: 0,
-                    child: Center(
-                      child: _ArrowButton(
-                        direction: AxisDirection.left,
-                        onPressed: goToPrevious,
-                      ),
-                    ),
-                  ),
-                if (currentIndex.value < items.length - 1)
-                  Positioned(
-                    right: 16,
-                    top: 0,
-                    bottom: 0,
-                    child: Center(
-                      child: _ArrowButton(
-                        direction: AxisDirection.right,
-                        onPressed: goToNext,
-                      ),
-                    ),
-                  ),
-              ],
               GestureDetector(
                 onTap: () {
                   final currentItem = items[currentIndex.value];
-                  if (currentItem.mimeType?.startsWith('image') == true) {
+                  if (currentItem.mimeType.startsWith('image') == true) {
                     showControls.value = !showControls.value;
                     controlsVisible.value = true;
                   }
@@ -345,6 +322,32 @@ class CloudFileLightbox extends HookConsumerWidget {
                   ),
                 ),
               ),
+              if (items.length > 1) ...[
+                if (currentIndex.value > 0)
+                  Positioned(
+                    left: 16,
+                    top: 0,
+                    bottom: 0,
+                    child: Center(
+                      child: _ArrowButton(
+                        direction: AxisDirection.left,
+                        onPressed: goToPrevious,
+                      ),
+                    ),
+                  ),
+                if (currentIndex.value < items.length - 1)
+                  Positioned(
+                    right: 16,
+                    top: 0,
+                    bottom: 0,
+                    child: Center(
+                      child: _ArrowButton(
+                        direction: AxisDirection.right,
+                        onPressed: goToNext,
+                      ),
+                    ),
+                  ),
+              ],
             ],
           ),
         ),
@@ -387,7 +390,7 @@ class _ArrowButton extends StatelessWidget {
 
 class _LightboxTopBar extends StatelessWidget {
   final BuildContext context;
-  final List<SnCloudFile> items;
+  final List<IDisplayableCloudFile> items;
   final int currentIndex;
   final VoidCallback onShowActions;
 
@@ -460,7 +463,7 @@ class _LightboxTopBar extends StatelessWidget {
 
 class _LightboxBottomBar extends StatelessWidget {
   final BuildContext context;
-  final List<SnCloudFile> items;
+  final List<IDisplayableCloudFile> items;
   final int currentIndex;
   final bool showOriginal;
   final bool showExif;
@@ -480,7 +483,7 @@ class _LightboxBottomBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final currentItem = items[currentIndex];
-    final isImage = currentItem.mimeType?.startsWith('image') == true;
+    final isImage = currentItem.mimeType.startsWith('image') == true;
     final hasExifData = ExifInfoOverlay.precheck(currentItem);
     final paddingBottom = MediaQuery.of(context).padding.bottom;
 

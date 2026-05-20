@@ -10,6 +10,7 @@ import 'package:island/accounts/screens/me/account_settings.dart';
 import 'package:island/core/network.dart';
 import 'package:island/core/translate.dart';
 import 'package:island/accounts/account_pod.dart';
+import 'package:island/posts/pods/bookmarks.dart';
 import 'package:island/creators/screens/publishers_form.dart';
 import 'package:island/discovery/discovery_feedback_service.dart';
 import 'package:island/posts/widgets/compose/compose_dialog.dart';
@@ -18,6 +19,7 @@ import 'package:island/posts/compose.dart';
 import 'package:island/core/utils/share_utils.dart';
 import 'package:island/posts/widgets/compose/embed_view_renderer.dart';
 import 'package:island/posts/widgets/compose/post_award_sheet.dart';
+import 'package:island/posts/widgets/compose/post_collections_sheet.dart';
 import 'package:island/posts/widgets/compose/post_pin_sheet.dart';
 import 'package:island/posts/widgets/compose/post_reaction_sheet.dart';
 import 'package:island/posts/widgets/compose/post_shared.dart';
@@ -44,6 +46,7 @@ class PostActionableItem extends HookConsumerWidget {
   final Function(SnPost)? onUpdate;
   final VoidCallback? onOpen;
   final VoidCallback? onTap;
+  final void Function(String)? onPostTap;
   const PostActionableItem({
     super.key,
     required this.item,
@@ -59,6 +62,7 @@ class PostActionableItem extends HookConsumerWidget {
     this.onUpdate,
     this.onOpen,
     this.onTap,
+    this.onPostTap,
   });
 
   @override
@@ -116,7 +120,7 @@ class PostActionableItem extends HookConsumerWidget {
         case 'copyLink':
           return () {
             Clipboard.setData(
-              ClipboardData(text: 'https://dy.ci/posts/${item.id}'),
+              ClipboardData(text: 'https://solian.app/posts/${item.id}'),
             );
           };
         case 'reply':
@@ -226,7 +230,7 @@ class PostActionableItem extends HookConsumerWidget {
           return () {
             showShareSheetLink(
               context: context,
-              link: 'https://dy.ci/posts/${item.id}',
+              link: 'https://solian.app/posts/${item.id}',
               title: 'sharePost'.tr(),
               toSystem: true,
             );
@@ -291,6 +295,21 @@ class PostActionableItem extends HookConsumerWidget {
               resourceIdentifier: 'post:${item.id}',
             );
           };
+        case 'collections':
+          return () => showPostCollectionsSheet(
+            context,
+            item,
+            onChanged: onRefresh,
+          );
+        case 'bookmark':
+          return () async {
+            try {
+              await toggleBookmark(ref, postId: item.id, currentlyBookmarked: item.isBookmarked);
+              onUpdate?.call(item.copyWith(isBookmarked: !item.isBookmarked));
+            } catch (err) {
+              showErrorAlert(err);
+            }
+          };
         default:
           return () {};
       }
@@ -339,11 +358,26 @@ class PostActionableItem extends HookConsumerWidget {
         value: 'boost',
         child: buildMenuItem(label: 'boosts'.tr(), icon: Symbols.repeat),
       ),
+      PopupMenuItem<String>(
+        value: 'bookmark',
+        child: buildMenuItem(
+          label: item.isBookmarked ? 'unbookmark'.tr() : 'bookmark'.tr(),
+          icon: item.isBookmarked ? Symbols.bookmark_added : Symbols.bookmark,
+        ),
+      ),
       const PopupMenuDivider(),
       PopupMenuItem<String>(
         value: 'share',
         child: buildMenuItem(label: 'share'.tr(), icon: Symbols.share),
       ),
+      if (isAuthor)
+        PopupMenuItem<String>(
+          value: 'collections',
+          child: buildMenuItem(
+            label: 'collections'.tr(),
+            icon: Symbols.collections,
+          ),
+        ),
       if (!kIsWeb)
         PopupMenuItem<String>(
           value: 'sharePhoto',
@@ -419,6 +453,7 @@ class PostActionableItem extends HookConsumerWidget {
         onUpdate: onUpdate,
         onOpen: onOpen,
         trailing: trailing,
+        onPostTap: onPostTap,
       ),
       onTap: () {
         if (onTap != null) {
@@ -450,6 +485,7 @@ class PostItem extends HookConsumerWidget {
   final Function(SnPost)? onUpdate;
   final VoidCallback? onOpen;
   final Widget? trailing;
+  final void Function(String)? onPostTap;
   const PostItem({
     super.key,
     required this.item,
@@ -467,6 +503,7 @@ class PostItem extends HookConsumerWidget {
     this.onUpdate,
     this.onOpen,
     this.trailing,
+    this.onPostTap,
   });
 
   @override
@@ -579,7 +616,11 @@ class PostItem extends HookConsumerWidget {
                 item.repliedPost != null))
           Gap(renderingPadding.vertical),
         if (isShowReference)
-          ReferencedPostWidget(item: item, renderingPadding: renderingPadding),
+          ReferencedPostWidget(
+            item: item, 
+            renderingPadding: renderingPadding,
+            onPostTap: onPostTap,
+          ),
         PostHeader(
           item: item,
           isFullPost: isFullPost,
@@ -632,11 +673,101 @@ class PostItem extends HookConsumerWidget {
             parent: item,
             isOpenable: isEmbedOpenable,
             onOpen: onOpen,
+            onPostTap: onPostTap,
           ).padding(horizontal: renderingPadding.horizontal, top: 8),
         Gap(renderingPadding.vertical),
       ],
     );
   }
+}
+
+Widget buildPostTranslationSection({
+  required BuildContext context,
+  required SnPost item,
+  required bool isTextSelectable,
+  required double? textScale,
+  required String? translatedText,
+  required bool isTranslating,
+  required VoidCallback? onTranslate,
+  bool showTranslateButton = true,
+}) {
+  final theme = Theme.of(context);
+  final translatedWidget = (translatedText?.isNotEmpty ?? false)
+      ? Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Expanded(child: Divider()),
+                const Gap(8),
+                const Text('translated').tr().fontSize(11).opacity(0.75),
+              ],
+            ),
+            MarkdownTextContent(
+              textStyle: TextStyle(
+                fontSize: theme.textTheme.bodyMedium!.fontSize! * (textScale ?? 1),
+              ),
+              content: translatedText!,
+              isSelectable: isTextSelectable,
+              attachments: item.attachments,
+              noMentionChip: item.fediverseUri != null,
+            ),
+          ],
+        )
+      : null;
+
+  final translationStatusWidget = isTranslating
+      ? const SizedBox(
+          width: 14,
+          height: 14,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        )
+      : null;
+
+  final translatableWidget = onTranslate != null
+      ? Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: isTranslating ? null : onTranslate,
+            style: ButtonStyle(
+              padding: const WidgetStatePropertyAll(
+                EdgeInsets.symmetric(horizontal: 2),
+              ),
+              visualDensity: const VisualDensity(horizontal: 0, vertical: -4),
+              foregroundColor: WidgetStatePropertyAll(
+                translatedText == null ? null : Colors.grey,
+              ),
+            ),
+            icon: const Icon(Symbols.translate),
+            label: translatedText != null
+                ? const Text('translated').tr()
+                : isTranslating
+                ? const Text('translating').tr()
+                : const Text('translate').tr(),
+          ),
+        )
+      : null;
+
+  final children = <Widget>[];
+  if (translationStatusWidget != null) {
+    children.add(
+      Row(
+        children: [
+          const Expanded(child: Divider()),
+          const Gap(8),
+          translationStatusWidget,
+        ],
+      ),
+    );
+  }
+  if (translatedWidget != null) {
+    children.add(translatedWidget);
+  }
+  if (showTranslateButton && translatableWidget != null) {
+    children.add(translatableWidget);
+  }
+
+  return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children);
 }
 
 class PostReactionList extends HookConsumerWidget {

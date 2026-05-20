@@ -1,3 +1,4 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/material_symbols_icons.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -7,6 +8,7 @@ class RoomSelectionMode extends StatelessWidget {
   final int selectedCount;
   final VoidCallback onClose;
   final VoidCallback onAIThink;
+  final VoidCallback onRedirect;
 
   const RoomSelectionMode({
     super.key,
@@ -14,6 +16,7 @@ class RoomSelectionMode extends StatelessWidget {
     required this.selectedCount,
     required this.onClose,
     required this.onAIThink,
+    required this.onRedirect,
   });
 
   @override
@@ -41,12 +44,19 @@ class RoomSelectionMode extends StatelessWidget {
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const Spacer(),
-          if (selectedCount > 0)
+          if (selectedCount > 0) ...[
+            FilledButton.tonalIcon(
+              onPressed: onRedirect,
+              icon: const Icon(Symbols.send),
+              label: Text('redirect'.tr()),
+            ),
+            const SizedBox(width: 8),
             FilledButton.icon(
               onPressed: onAIThink,
               icon: const Icon(Symbols.smart_toy),
-              label: const Text('AI Think'),
+              label: Text('chatAskAI'.tr()),
             ),
+          ],
         ],
       ),
     );

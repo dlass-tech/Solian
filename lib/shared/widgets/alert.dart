@@ -9,6 +9,7 @@ import 'package:island/main.dart';
 import 'package:island/core/config.dart';
 import 'package:island/core/notification.dart';
 import 'package:island/core/services/responsive.dart';
+import 'package:island/route.dart';
 
 import 'package:just_audio/just_audio.dart';
 import 'package:logging/logging.dart';
@@ -16,6 +17,8 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:styled_widget/styled_widget.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:solar_network_sdk/solar_network_sdk.dart';
+import 'package:island/core/network/domain_trust.dart';
+import 'package:island/shared/widgets/content/domain_trust_sheet.dart';
 
 const double kFloatingSnackBarWidth = 400.0;
 
@@ -443,18 +446,40 @@ void showNotification({
 }
 
 Future<void> openExternalLink(Uri url, WidgetRef ref) async {
-  final whitelistDomains = ['dy.ci', 'zhaishis.com'];
-  if (whitelistDomains.any(
-    (domain) => url.host == domain || url.host.endsWith('.$domain'),
-  )) {
+  await openExternalLinkWithContainer(url, ProviderScope.containerOf(globalOverlay.currentState!.context));
+}
+
+Future<void> openExternalLinkWithContainer(
+  Uri url,
+  ProviderContainer container,
+) async {
+  if (url.scheme == 'solian') {
     await launchUrl(url, mode: LaunchMode.externalApplication);
-  } else {
-    final value = await showConfirmAlert(
-      'openLinkConfirmDescription'.tr(args: [url.toString()]),
-      'openLinkConfirm'.tr(),
-    );
-    if (value) {
-      await launchUrl(url, mode: LaunchMode.externalApplication);
-    }
+    return;
+  }
+
+  final context = container.read(routerProvider).navigatorKey.currentState!.context;
+
+  showLoadingModal(context);
+  final domainTrustService = container.read(domainTrustServiceProvider);
+  final result = await domainTrustService.validateUrl(url);
+
+  if (!context.mounted) return;
+  hideLoadingModal(context);
+
+   if (result.trustLevel == DomainTrustLevel.verified) {
+    await launchUrl(url, mode: LaunchMode.externalApplication);
+    return;
+  }
+
+  final decision = await showDomainTrustSheet(
+    context,
+    uri: url,
+    result: result,
+    action: DomainTrustAction.openLink,
+  );
+
+  if (decision == DomainTrustDecision.proceed) {
+    await launchUrl(url, mode: LaunchMode.externalApplication);
   }
 }

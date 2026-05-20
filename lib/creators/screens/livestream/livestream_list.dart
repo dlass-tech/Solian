@@ -62,7 +62,10 @@ String? _extractCloudFileId(dynamic pickerResult) {
 class CreatorLivestreamListScreen extends ConsumerWidget {
   final String pubName;
 
-  const CreatorLivestreamListScreen({super.key, required this.pubName});
+  const CreatorLivestreamListScreen({
+    super.key,
+    @PathParam("pubName") required this.pubName,
+  });
 
   Future<void> _createLivestream(
     BuildContext context,
@@ -322,7 +325,7 @@ class _CreatorLivestreamItem extends ConsumerWidget {
       context: context,
       isScrollControlled: true,
       builder: (context) =>
-          const CloudFilePicker(allowedTypes: {UniversalFileType.image}),
+          const CloudFilePicker(allowedTypes: {UniversalFileType.image}, usage: 'livestream'),
     );
     final fileId = _extractCloudFileId(picked);
     if (fileId == null) return;
@@ -885,6 +888,7 @@ class _CreateLivestreamSheet extends HookConsumerWidget {
                         isScrollControlled: true,
                         builder: (context) => const CloudFilePicker(
                           allowedTypes: {UniversalFileType.image},
+                          usage: 'livestream',
                         ),
                       );
                       final fileId = _extractCloudFileId(picked);

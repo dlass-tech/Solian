@@ -317,7 +317,8 @@ class _PostsSearchTab extends HookConsumerWidget {
                               ),
                             ),
                             const Gap(8),
-                            if (showFilters.value) buildFilterPanel(),
+                            if (showFilters.value)
+                              buildFilterPanel().padding(horizontal: 8),
                           ],
                         ),
                       ),
@@ -364,7 +365,8 @@ class _PostsSearchTab extends HookConsumerWidget {
                           ),
                         ),
                         const Gap(4),
-                        if (showFilters.value) buildFilterPanel(),
+                        if (showFilters.value)
+                          buildFilterPanel().padding(horizontal: 8),
                       ],
                     ),
                   ),
@@ -630,17 +632,10 @@ class _AccountSearchTab extends HookConsumerWidget {
                                     : publisher.name,
                                 style: Theme.of(context).textTheme.titleMedium,
                               ),
-                              subtitle: Row(
-                                children: [
-                                  if (publisher.bio.isNotEmpty)
-                                    Text(
-                                      publisher.bio,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    )
-                                  else
-                                    Text('@${publisher.name}'),
-                                ],
+                              subtitle: Text(
+                                publisher.bio,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
                               trailing: const Icon(
                                 Symbols.chevron_right,
@@ -785,21 +780,11 @@ class _AccountSearchTab extends HookConsumerWidget {
                                 account: account,
                                 style: Theme.of(context).textTheme.titleMedium,
                               ),
-                              subtitle: Row(
-                                children: [
-                                  Text('@${account.name}'),
-                                  if (account.profile.bio.isNotEmpty)
-                                    Expanded(
-                                      child: Text(
-                                        account.profile.bio,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: Theme.of(
-                                          context,
-                                        ).textTheme.bodySmall,
-                                      ),
-                                    ),
-                                ],
+                              subtitle: Text(
+                                account.profile.bio,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodySmall,
                               ),
                               trailing: const Icon(
                                 Symbols.chevron_right,

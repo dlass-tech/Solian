@@ -33,6 +33,10 @@ class ChatRoomState {
   final SnChatMessage? messageForwardingTo;
   final SnPoll? selectedPoll;
   final SnWalletFund? selectedFund;
+  final String? selectedLocationName;
+  final String? selectedLocationAddress;
+  final String? selectedLocationWkt;
+  final String? selectedMeetId;
 
   // Scroll state (not persisted - fresh on each navigation)
   final bool isScrollingToMessage;
@@ -52,6 +56,10 @@ class ChatRoomState {
     this.messageForwardingTo,
     this.selectedPoll,
     this.selectedFund,
+    this.selectedLocationName,
+    this.selectedLocationAddress,
+    this.selectedLocationWkt,
+    this.selectedMeetId,
     this.isScrollingToMessage = false,
     required this.roomOpenTime,
     this.lastReadAnchorMessageId,
@@ -68,6 +76,10 @@ class ChatRoomState {
     SnChatMessage? messageForwardingTo,
     SnPoll? selectedPoll,
     SnWalletFund? selectedFund,
+    String? selectedLocationName,
+    String? selectedLocationAddress,
+    String? selectedLocationWkt,
+    String? selectedMeetId,
     bool? isScrollingToMessage,
     DateTime? roomOpenTime,
     String? lastReadAnchorMessageId,
@@ -76,6 +88,8 @@ class ChatRoomState {
     bool clearForwardingTo = false,
     bool clearPoll = false,
     bool clearFund = false,
+    bool clearLocation = false,
+    bool clearMeet = false,
     bool clearLastReadAnchor = false,
   }) {
     return ChatRoomState(
@@ -95,6 +109,18 @@ class ChatRoomState {
           : (messageForwardingTo ?? this.messageForwardingTo),
       selectedPoll: clearPoll ? null : (selectedPoll ?? this.selectedPoll),
       selectedFund: clearFund ? null : (selectedFund ?? this.selectedFund),
+      selectedLocationName: clearLocation
+          ? null
+          : (selectedLocationName ?? this.selectedLocationName),
+      selectedLocationAddress: clearLocation
+          ? null
+          : (selectedLocationAddress ?? this.selectedLocationAddress),
+      selectedLocationWkt: clearLocation
+          ? null
+          : (selectedLocationWkt ?? this.selectedLocationWkt),
+      selectedMeetId: clearMeet
+          ? null
+          : (selectedMeetId ?? this.selectedMeetId),
       isScrollingToMessage: isScrollingToMessage ?? this.isScrollingToMessage,
       roomOpenTime: roomOpenTime ?? this.roomOpenTime,
       lastReadAnchorMessageId: clearLastReadAnchor
@@ -271,7 +297,40 @@ class ChatRoomStateNotifier extends Notifier<ChatRoomState> {
     final newProgress = Map<String, Map<int, double?>>.from(
       state.attachmentProgress,
     );
-    newProgress[messageId] = {0: progress};
+    if (progress == null) {
+      newProgress.remove(messageId);
+    } else {
+      newProgress[messageId] = {0: progress};
+    }
+    state = state.copyWith(attachmentProgress: newProgress);
+  }
+
+  void updateAttachmentUploadProgress(int index, double? progress) {
+    if (index < 0 || index >= state.attachments.length) return;
+    final newProgress = Map<String, Map<int, double?>>.from(
+      state.attachmentProgress,
+    );
+    final uploadProgress = Map<int, double?>.from(
+      newProgress['chat-upload'] ?? const {},
+    );
+    uploadProgress[index] = progress;
+    newProgress['chat-upload'] = uploadProgress;
+    state = state.copyWith(attachmentProgress: newProgress);
+  }
+
+  void clearAttachmentUploadProgress(int index) {
+    final newProgress = Map<String, Map<int, double?>>.from(
+      state.attachmentProgress,
+    );
+    final uploadProgress = Map<int, double?>.from(
+      newProgress['chat-upload'] ?? const {},
+    );
+    uploadProgress.remove(index);
+    if (uploadProgress.isEmpty) {
+      newProgress.remove('chat-upload');
+    } else {
+      newProgress['chat-upload'] = uploadProgress;
+    }
     state = state.copyWith(attachmentProgress: newProgress);
   }
 
@@ -311,6 +370,20 @@ class ChatRoomStateNotifier extends Notifier<ChatRoomState> {
     state = state.copyWith(selectedFund: fund, clearFund: fund == null);
   }
 
+  void setLocation({String? name, String? address, String? wkt}) {
+    final hasLocation = name != null || address != null || wkt != null;
+    state = state.copyWith(
+      selectedLocationName: name,
+      selectedLocationAddress: address,
+      selectedLocationWkt: wkt,
+      clearLocation: !hasLocation,
+    );
+  }
+
+  void setMeet(String? meetId) {
+    state = state.copyWith(selectedMeetId: meetId, clearMeet: meetId == null);
+  }
+
   void clearInput() {
     messageController.clear();
     state = state.copyWith(
@@ -319,6 +392,8 @@ class ChatRoomStateNotifier extends Notifier<ChatRoomState> {
       clearForwardingTo: true,
       clearPoll: true,
       clearFund: true,
+      clearLocation: true,
+      clearMeet: true,
       attachments: [],
     );
   }
@@ -379,7 +454,17 @@ class ChatRoomStateNotifier extends Notifier<ChatRoomState> {
         setReplyingTo(message.toRemoteMessage());
       case 'resend':
         notifier.retryMessage(message.id);
+      case 'redirect':
+        _redirectSingleMessage(message);
     }
+  }
+
+  void _redirectSingleMessage(LocalChatMessage message) {
+    // Enter selection mode with this single message selected
+    state = state.copyWith(
+      isSelectionMode: true,
+      selectedMessageIds: {message.id},
+    );
   }
 
   void sendMessage() {
@@ -387,7 +472,11 @@ class ChatRoomStateNotifier extends Notifier<ChatRoomState> {
     if (text.isEmpty &&
         state.attachments.isEmpty &&
         state.selectedPoll == null &&
-        state.selectedFund == null) {
+        state.selectedFund == null &&
+        state.selectedLocationName == null &&
+        state.selectedLocationAddress == null &&
+        state.selectedLocationWkt == null &&
+        state.selectedMeetId == null) {
       return;
     }
 
@@ -398,6 +487,10 @@ class ChatRoomStateNotifier extends Notifier<ChatRoomState> {
       state.attachments,
       poll: state.selectedPoll,
       fund: state.selectedFund,
+      locationName: state.selectedLocationName,
+      locationAddress: state.selectedLocationAddress,
+      locationWkt: state.selectedLocationWkt,
+      meetId: state.selectedMeetId,
       editingTo: state.messageEditingTo,
       forwardingTo: state.messageForwardingTo,
       replyingTo: state.messageReplyingTo,
@@ -420,11 +513,6 @@ class ChatRoomStateNotifier extends Notifier<ChatRoomState> {
 
     state = state.copyWith(isScrollingToMessage: true);
 
-    // Add flashing effect
-    ref
-        .read(flashingMessagesProvider.notifier)
-        .update((set) => set.union({messageId}));
-
     final messageIndex = messageList.indexWhere((m) => m.id == messageId);
 
     if (messageIndex == -1) {
@@ -446,6 +534,8 @@ class ChatRoomStateNotifier extends Notifier<ChatRoomState> {
   }) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       try {
+        ref.read(flashingMessagesProvider.notifier).trigger(messageId);
+
         listController.animateToItem(
           index: index,
           scrollController: scrollController,
@@ -545,7 +635,7 @@ class ChatRoomStateNotifier extends Notifier<ChatRoomState> {
       ...state.attachments,
       UniversalFile(
         data: cloudFile,
-        type: switch (cloudFile.mimeType?.split('/').firstOrNull) {
+        type: switch (cloudFile.mimeType.split('/').firstOrNull) {
           'image' => UniversalFileType.image,
           'video' => UniversalFileType.video,
           'audio' => UniversalFileType.audio,

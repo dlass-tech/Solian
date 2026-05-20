@@ -14,10 +14,9 @@ import 'package:island/accounts/account_pod.dart';
 import 'package:island/core/websocket.dart';
 import 'package:island/core/services/event_bus.dart';
 import 'package:island/core/services/responsive.dart';
-import 'package:island/core/widgets/embeds/livestream_overlay.dart';
+import 'package:island/livestreams/livestream_overlay.dart';
 import 'package:island/notifications/notification_overlay.dart';
 import 'package:island/route.gr.dart';
-import 'package:island/shared/widgets/task_overlay.dart';
 import 'package:material_symbols_icons/material_symbols_icons.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shake/shake.dart';
@@ -29,7 +28,6 @@ class AppScrollBehavior extends MaterialScrollBehavior {
   Set<PointerDeviceKind> get dragDevices => {
     PointerDeviceKind.touch, // default
     PointerDeviceKind.trackpad, // default
-    PointerDeviceKind.mouse, // add mouse dragging
   };
 }
 
@@ -136,7 +134,7 @@ class WindowScaffold extends HookConsumerWidget {
                           children: [
                             const SizedBox(height: 32),
                             Text(
-                              'Dynamic Network',
+                              'Solar Network',
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 color: Theme.of(context).colorScheme.onSurface,
@@ -154,14 +152,14 @@ class WindowScaffold extends HookConsumerWidget {
                                   Image.asset(
                                     Theme.of(context).brightness ==
                                             Brightness.dark
-                                        ? 'assets/icons/icon-dark.png'
-                                        : 'assets/icons/icon.png',
+                                        ? 'assets/icons/icon-dark.webp'
+                                        : 'assets/icons/icon.webp',
                                     width: 20,
                                     height: 20,
                                   ),
                                   const SizedBox(width: 8),
                                   Text(
-                                    'Dynamic Network',
+                                    'Solar Network',
                                     textAlign: TextAlign.start,
                                   ),
                                 ],
@@ -208,7 +206,6 @@ class WindowScaffold extends HookConsumerWidget {
               ],
             ),
             _WebSocketIndicator(),
-            const TaskOverlay(),
             const NotificationOverlay(),
             const LivestreamFloatingOverlay(),
             if (showPalette.value)
@@ -223,7 +220,6 @@ class WindowScaffold extends HookConsumerWidget {
       children: [
         Positioned.fill(child: child),
         _WebSocketIndicator(),
-        const TaskOverlay(),
         const NotificationOverlay(),
         const LivestreamFloatingOverlay(),
         if (showPalette.value)
@@ -444,10 +440,10 @@ final backgroundImageProvider = Provider<File?>((ref) {
 
 final backgroundMemoryImageProvider = FutureProvider<MemoryImage?>((ref) async {
   if (kIsWeb) return null;
-  
+
   final file = ref.watch(backgroundImageProvider);
   if (file == null) return null;
-  
+
   try {
     final bytes = await file.readAsBytes();
     return MemoryImage(bytes);
@@ -470,8 +466,8 @@ class AppBackground extends ConsumerWidget {
     );
 
     if (isRoot || !isWideScreen(context)) {
-      if (backgroundMemoryImage.hasValue && 
-          backgroundMemoryImage.value != null && 
+      if (backgroundMemoryImage.hasValue &&
+          backgroundMemoryImage.value != null &&
           showBackground) {
         return Material(
           color: Theme.of(context).colorScheme.surface,
@@ -534,19 +530,13 @@ class _WebSocketIndicator extends HookConsumerWidget {
     if (websocketState == WebSocketState.connected()) {
       indicatorColor = Colors.green;
       indicatorText = 'connectionConnected';
-      indicatorIcon = Icon(
-        key: ValueKey('ws_connected'),
-        Symbols.power,
-        color: Colors.white,
-        size: 16,
-      );
+      indicatorIcon = Icon(Symbols.power, color: Colors.white, size: 16);
       opacity = 0.0;
       isInteractive = false;
     } else if (websocketState == WebSocketState.connecting()) {
       indicatorColor = Colors.teal;
       indicatorText = 'connectionReconnecting';
       indicatorIcon = SizedBox(
-        key: ValueKey('ws_connecting'),
         width: 16,
         height: 16,
         child: CircularProgressIndicator(
@@ -561,22 +551,12 @@ class _WebSocketIndicator extends HookConsumerWidget {
       indicatorColor = Colors.red;
       indicatorText = 'connectionServerDown';
       isInteractive = true;
-      indicatorIcon = Icon(
-        key: ValueKey('ws_server_down'),
-        Symbols.power_off,
-        color: Colors.white,
-        size: 16,
-      );
+      indicatorIcon = Icon(Symbols.power_off, color: Colors.white, size: 16);
       opacity = 1.0;
     } else {
       indicatorColor = Colors.red;
       indicatorText = 'connectionDisconnected';
-      indicatorIcon = Icon(
-        key: ValueKey('ws_disconnected'),
-        Symbols.power_off,
-        color: Colors.white,
-        size: 16,
-      );
+      indicatorIcon = Icon(Symbols.power_off, color: Colors.white, size: 16);
       opacity = 1.0;
       isInteractive = false;
     }

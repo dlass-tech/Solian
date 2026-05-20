@@ -32,7 +32,10 @@ class SelectedFile {
 class TicketDetailScreen extends HookConsumerWidget {
   final String ticketId;
 
-  const TicketDetailScreen({super.key, required this.ticketId});
+  const TicketDetailScreen({
+    super.key,
+    @PathParam("ticketId") required this.ticketId,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -93,6 +96,7 @@ class TicketDetailScreen extends HookConsumerWidget {
           .createCloudFile(
             fileData: universalFile,
             poolId: poolId,
+            usage: 'ticket',
             mode: selectedFile.isImage
                 ? FileUploadMode.mediaSafe
                 : FileUploadMode.generic,

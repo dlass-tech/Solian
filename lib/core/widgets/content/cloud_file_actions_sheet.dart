@@ -12,14 +12,14 @@ import 'package:solar_network_sdk/solar_network_sdk.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 
 class CloudFileActionsSheet extends StatelessWidget {
-  final SnCloudFile item;
+  final IDisplayableCloudFile item;
   final VoidCallback? onClose;
 
   const CloudFileActionsSheet({super.key, required this.item, this.onClose});
 
   static Future<T?> show<T>({
     required BuildContext context,
-    required SnCloudFile item,
+    required IDisplayableCloudFile item,
   }) {
     return showModalBottomSheet<T>(
       useRootNavigator: true,
@@ -65,7 +65,7 @@ class CloudFileActionsSheet extends StatelessWidget {
               );
             },
           ),
-          if (item.url != null)
+          if (item.storageUrl != null)
             _ActionTile(
               icon: Symbols.open_in_new,
               title: 'openInBrowser'.tr(),
@@ -73,7 +73,7 @@ class CloudFileActionsSheet extends StatelessWidget {
               onTap: () {
                 Navigator.pop(context);
                 launchUrlString(
-                  item.url!,
+                  item.storageUrl!,
                   mode: LaunchMode.externalApplication,
                 );
               },
@@ -83,7 +83,9 @@ class CloudFileActionsSheet extends StatelessWidget {
             title: 'copyLink'.tr(),
             subtitle: 'copyFileLinkToClipboard'.tr(),
             onTap: () {
-              Clipboard.setData(ClipboardData(text: item.url ?? item.id));
+              Clipboard.setData(
+                ClipboardData(text: item.storageUrl ?? item.id),
+              );
               showSnackBar('linkCopied'.tr());
               Navigator.pop(context);
             },
@@ -94,7 +96,9 @@ class CloudFileActionsSheet extends StatelessWidget {
             subtitle: 'openInFullscreenViewer'.tr(),
             onTap: () {
               Navigator.pop(context);
-              context.router.push(FileDetailRoute(item: item));
+              if (item is SnCloudFile) {
+                context.router.push(FileDetailRoute(id: item.id));
+              }
             },
           ),
           const Gap(16),
