@@ -6,18 +6,18 @@
 #define FullVersion AppVersion + "." + BuildNumber
 
 [Setup]
-AppName=Solian
+AppName=Dynamic
 AppVersion={#AppVersion}
-AppPublisher=Solsynth
-AppPublisherURL=https://solsynth.dev
-AppSupportURL=https://kb.solsynth.dev/zh/solar-network
-AppUpdatesURL=https://github.com/Solsynth/Solian/releases
-AppCopyright=Copyright © 2025 Solsynth
+AppPublisher=Dynamic Team
+AppPublisherURL=https://dy-ci.com
+AppSupportURL=https://kb.zhaishis.com/zh/solar-network
+AppUpdatesURL=https://github.com/dy-ci/Dynamic/releases
+AppCopyright=Copyright © 2026 Dynamic Team
 VersionInfoVersion={#FullVersion}
-UninstallDisplayName=Solian
-UninstallDisplayIcon={app}\Solian.exe
+UninstallDisplayName=Dynamic
+UninstallDisplayIcon={app}\Dynamic.exe
 
-DefaultDirName={commonpf}\Solian
+DefaultDirName={commonpf}\Dynamic
 UsePreviousAppDir=no
 
 OutputDir=.\Installer
@@ -36,17 +36,17 @@ PrivilegesRequired=admin
 Source: ".\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\Solian"; Filename: "{app}\Solian.exe";IconFilename: "{app}\Solian.exe"
-Name: "{group}\{cm:UninstallProgram,Solian}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\Solian"; Filename: "{app}\Solian.exe"; Tasks: desktopicon
+Name: "{group}\Dynamic"; Filename: "{app}\Dynamic.exe";IconFilename: "{app}\Dynamic.exe"
+Name: "{group}\{cm:UninstallProgram,Dynamic}"; Filename: "{uninstallexe}"
+Name: "{autodesktop}\Dynamic"; Filename: "{app}\Dynamic.exe"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Run]
-Filename: "{app}\Solian.exe"; Description: "Launch Solian"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\Dynamic.exe"; Description: "Launch Dynamic"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
-Type: filesandordirs; Name: "{userappdata}\dev.solsynth\Solian"
-Type: files; Name: "{group}\Solian.lnk" ;
-Type: files; Name: "{autodesktop}\Solian.lnk" ;
+Type: filesandordirs; Name: "{userappdata}\dev.solsynth\Dynamic"
+Type: files; Name: "{group}\Dynamic.lnk" ;
+Type: files; Name: "{autodesktop}\Dynamic.lnk" ;

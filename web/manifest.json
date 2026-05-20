@@ -1,11 +1,11 @@
 {
-    "name": "Solian",
-    "short_name": "Solian",
+    "name": "Dynamic",
+    "short_name": "Dynamic",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#ffffff",
     "theme_color": "#7d80ba",
-    "description": "A new Flutter project.",
+    "description": "Dynamic",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

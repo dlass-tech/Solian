@@ -9,9 +9,9 @@
 </p>
 
 <p align="center">
-  <a href="LICENSE.txt"><img src="https://img.shields.io/github/license/Dynamic Team/HyperNet.Surface" alt="License"></a>
+  <a href="LICENSE.txt"><img src="https://img.shields.io/github/license/dy-ci/Dynamic" alt="License"></a>
   <a href="https://crowdin.com/project/solian"><img src="https://badges.crowdin.net/solian/localized.svg" alt="Localization Status"></a>
-  <a href="https://github.com/Dynamic Team/HyperNet.Surface/releases"><img src="https://img.shields.io/github/v/release/Dynamic Team/HyperNet.Surface?include_prereleases" alt="Latest Release"></a>
+  <a href="https://github.com/dy-ci/Dynamic/releases"><img src="https://img.shields.io/github/v/release/dy-ci/Dynamic?include_prereleases" alt="Latest Release"></a>
 </p>
 
 ---
